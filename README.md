@@ -1,0 +1,122 @@
+# tradovate-indicators
+
+Custom indicators for the [Tradovate custom-indicator API](https://tradovate.github.io/custom-indicators/).
+
+## MMC Scalp-Pro Meter (PSR)
+
+[`indicators/mmcScalpProMeter.js`](indicators/mmcScalpProMeter.js)
+
+A faithful port of the **"Scalp Pro Meter PSR"** ThinkorSwim indicator by the
+*Million-Dollar-Margin Club* (MMC) — the tool used in the "Professor's Live" morning
+scalping streams — rebuilt for Tradovate. It renders in its own pane and is designed
+for 1-minute scalping.
+
+### What it shows
+
+| Original ThinkorSwim feature | Tradovate port |
+|---|---|
+| Tall blue volume histogram (total candle volume) | Blue `columns` plot of `volume` |
+| Green buyer line/dot + red seller line/dot, positioned by where in the range trading occurred | Green/red `dots` plots at estimated `buyVolume` / `sellVolume` inside each volume bar |
+| 10-box green/red directional strength meter | Fixed HUD (top-left of pane): 10 boxes split green(buy)/red(sell) by the current candle's buy % |
+| Buy/Sell % label — green / red / yellow (balanced) | `BUY x%  SELL y%` label, colored by dominance (yellow inside the balance band) |
+| 14-EMA vs VWAP trend label, hidden when price stalls | `TREND ▲ EMA > VWAP` / `▼ EMA < VWAP`, shown only during an active move (correct side **and** EMA slope agrees); hidden otherwise |
+| Volume feedback + audio "ding" on a volume spike | Volume label turns **cyan** and shows `▲` when the current candle's volume exceeds the previous candle's |
+
+### How the buy/sell split is computed
+
+Exactly like the original: it's an **estimate** from where the close sits inside the
+candle's range.
+
+```
+buyFraction  = (close - low) / (high - low)   // close near high => buyers in control
+sellFraction = 1 - buyFraction
+buyVolume    = volume * buyFraction
+sellVolume   = volume * sellFraction
+```
+
+This is *not* true order-flow. Tradovate does expose real per-bar delta via
+`d.offerVolume()` / `d.bidVolume()`, so if you have a data feed that provides it you
+can get a genuine buy/sell split by replacing the block above with:
+
+```js
+const buyVolume  = d.offerVolume();          // traded at the ask = buyers
+const sellVolume = d.bidVolume();            // traded at the bid = sellers
+const denom      = buyVolume + sellVolume;
+const buyFrac    = denom > 0 ? buyVolume / denom : 0.5;
+```
+
+### Parameters
+
+| Param | Default | Meaning |
+|---|---|---|
+| `emaPeriod` | 14 | EMA period compared against session VWAP |
+| `meterBoxes` | 10 | Number of boxes in the strength meter |
+| `balanceThreshold` | 6 | How close to 50/50 (in %) counts as "balanced" (yellow label) |
+
+### Limitations vs the original
+
+- **No audio.** The Tradovate custom-indicator API has no sound primitive, so the
+  audible "dings" are reproduced visually (cyan `▲` on a volume spike, trend label on
+  an active EMA/VWAP move). For real sound, wire up a Tradovate platform *alert*.
+- **VWAP** is the standard session VWAP (resets per trading day, uses the bar's volume
+  profile when available, otherwise typical price × volume) — matching the built-in
+  Tradovate VWAP.
+
+### Install
+
+1. In Tradovate, open **Chart → Indicators → the code editor (Code Explorer)**.
+2. Create a new indicator and paste the contents of
+   [`indicators/mmcScalpProMeter.js`](indicators/mmcScalpProMeter.js).
+3. Save, then add **"MMC Scalp-Pro Meter (PSR)"** to a chart (it opens in a new pane).
+   Best on a 1-minute chart, per the original.
+
+The `require("./tools/...")` calls resolve against Tradovate's bundled SDK modules
+(`predef`, `meta`, `EMA`, `graphics`) — the same modules the official examples use — so
+no local dependencies are needed inside the platform.
+
+## NY Session ATR Levels
+
+[`indicators/nySessionAtrLevels.js`](indicators/nySessionAtrLevels.js)
+
+Draws a fan of horizontal ATR-spaced levels anchored to the New York regular session,
+useful for gauging how far price has travelled from the open in ATR terms.
+
+### What it shows
+
+- A **center line** anchored to the **open of the first NY-session candle** (09:30 ET).
+- **10 lines above and 10 lines below** the center, each spaced by 1× ATR.
+- Levels are drawn **only during the NY regular session** (09:30–16:00 ET). Outside the
+  session the plots return nothing, so the lines break; they re-anchor automatically at
+  the next NY open.
+
+The center price and ATR spacing are captured at the session open. By default
+(`DYNAMIC_ATR = true`) the spacing tracks the latest ATR on every candle close while the
+center stays anchored; set `DYNAMIC_ATR = false` to freeze the spacing at the open so all
+21 lines are perfectly flat for the whole session.
+
+### Parameters
+
+| Param | Default | Meaning |
+|---|---|---|
+| `atrPeriod` | 14 | ATR period (Wilder's smoothing, computed inline) |
+
+The line count, session hours, and the dynamic/fixed-spacing mode are top-of-file
+constants (`LINES`, `SESSION_OPEN_MIN`, `SESSION_CLOSE_MIN`, `DYNAMIC_ATR`) rather than
+UI parameters — edit them in the code before pasting.
+
+### Notes / limitations
+
+- **Timezone** is handled without `Intl`: US Eastern offset is derived from hand-rolled
+  DST rules (2nd Sunday of March → 1st Sunday of November), so it is correct for US
+  Eastern trading but not parameterized for other zones.
+- **ATR** is computed inline with a simple-average warm-up until `atrPeriod` samples are
+  seen, then Wilder's smoothing — no dependency on a `tools/` ATR module.
+- Default line style is a light, semi-transparent grey at 1px width; adjust per-plot
+  styling in the Tradovate UI after adding it.
+
+### Install
+
+1. In Tradovate, open **Chart → Indicators → the code editor (Code Explorer)**.
+2. Create a new indicator and paste the contents of
+   [`indicators/nySessionAtrLevels.js`](indicators/nySessionAtrLevels.js).
+3. Save, then add **"NY Session ATR Levels"** to a chart (it overlays on the price pane).
