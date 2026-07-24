@@ -120,3 +120,67 @@ UI parameters — edit them in the code before pasting.
 2. Create a new indicator and paste the contents of
    [`indicators/nySessionAtrLevels.js`](indicators/nySessionAtrLevels.js).
 3. Save, then add **"NY Session ATR Levels"** to a chart (it overlays on the price pane).
+
+## MMC Market Magnet (PSR)
+
+[`indicators/mmcMarketMagnet.js`](indicators/mmcMarketMagnet.js)
+
+A port of the *Million-Dollar-Margin Club* **"Market Magnet / Market Magnet PSR"**
+ThinkorSwim indicator. Despite the "magnetic force" marketing, it is a **session
+volume profile** — their own published formulas confirm it.
+
+### What it shows
+
+| Original ThinkorSwim feature | Tradovate port |
+|---|---|
+| "Magnet" — solid magenta line, the gravitational center | **Point of Control (POC)**: the session price level with the most volume (`argmax Vᵢ`) |
+| "50% Volume Zone" | A **value area** covering 50% of the session's volume (`V₅₀% = 0.50·V_total`) |
+| High Band — green dashed line | **Value Area High (VAH)**: top of the 50% zone |
+| Low Band — red dashed line | **Value Area Low (VAL)**: bottom of the 50% zone |
+| Peak Zone (green) / Trough Zone (red) | The halves above / below the magnet (magnet→VAH and VAL→magnet), shown by the green/red band colors |
+| "Magnet / 50%" chart labels | `MAGNET (POC)`, `VAH 50%`, `VAL 50%` labels at the last bar |
+
+### How it works
+
+The volume-by-price profile is accumulated across the **NY regular session
+(09:30–16:00 ET)** using `d.profile()` (per-bar volume-by-price levels), keyed by
+tick. On each candle it recomputes:
+
+1. **POC** — the price level with the highest accumulated volume ("the magnet").
+2. **Value area** — starting at the POC, expand outward adding the larger-volume
+   neighbor each step until 50% of total session volume is covered; the top and
+   bottom of that band are **VAH** and **VAL**.
+
+The three levels update in real time as the day's distribution evolves and
+re-anchor each session. Outside the session the plots return nothing (the lines
+break), and the profile resets at the next NY open.
+
+### Parameters
+
+| Param | Default | Meaning |
+|---|---|---|
+| `valueAreaPct` | 50 | Percentage of session volume the value area (VAH/VAL band) must cover |
+
+Session hours and the label toggle are top-of-file constants
+(`SESSION_OPEN_MIN`, `SESSION_CLOSE_MIN`, `SHOW_LABELS`).
+
+### Notes / limitations
+
+- **Needs a volume profile.** `d.profile()` is populated when the chart is
+  requested with volume histograms. If a bar has no profile, the port falls back
+  to a single level at the bar's typical price × volume — coarser, but it still
+  runs. For a true profile, enable the volume-profile/histogram option on the chart.
+- **Marketing vs. math discrepancy:** the product page prose calls the bands the
+  session's highest/lowest price *reached*, but its formulas define them as the
+  50%-value-area edges. This port follows the formulas (the value area), which is
+  the standard, useful interpretation.
+- **Timezone** is handled without `Intl` (hand-rolled US-Eastern DST), same as
+  `nySessionAtrLevels.js`.
+
+### Install
+
+1. In Tradovate, open **Chart → Indicators → the code editor (Code Explorer)**.
+2. Create a new indicator and paste the contents of
+   [`indicators/mmcMarketMagnet.js`](indicators/mmcMarketMagnet.js).
+3. Save, then add **"MMC Market Magnet (PSR)"** to a chart (it overlays on the
+   price pane). Best on an intraday chart with volume profile enabled.
