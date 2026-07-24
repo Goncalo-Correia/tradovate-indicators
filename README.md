@@ -137,7 +137,8 @@ volume profile** — their own published formulas confirm it.
 | "50% Volume Zone" | A **value area** covering 50% of the session's volume (`V₅₀% = 0.50·V_total`) |
 | High Band — green dashed line | **Value Area High (VAH)**: top of the 50% zone |
 | Low Band — red dashed line | **Value Area Low (VAL)**: bottom of the 50% zone |
-| Peak Zone (green) / Trough Zone (red) | The halves above / below the magnet (magnet→VAH and VAL→magnet), shown by the green/red band colors |
+| Peak Zone (green ▼ arrows) / Trough Zone (red ▲ arrows) | A row of green down-arrows along the VAH and red up-arrows along the VAL, one per bar, tracing the two bands across the session |
+| Light-blue volume bars stretching across the screen | The session volume profile drawn as full-width, translucent light-blue horizontal bars whose thickness and opacity scale with volume (drawn on the last bar) |
 | "Magnet / 50%" chart labels | `MAGNET (POC)`, `VAH 50%`, `VAL 50%` labels at the last bar |
 
 ### How it works
@@ -161,8 +162,10 @@ break), and the profile resets at the next NY open.
 |---|---|---|
 | `valueAreaPct` | 50 | Percentage of session volume the value area (VAH/VAL band) must cover |
 
-Session hours and the label toggle are top-of-file constants
-(`SESSION_OPEN_MIN`, `SESSION_CLOSE_MIN`, `SHOW_LABELS`).
+Session hours and the visual toggles are top-of-file constants: `SESSION_OPEN_MIN`,
+`SESSION_CLOSE_MIN`, `SHOW_LABELS`, `SHOW_ARROWS` / `ARROW_EVERY` (arrow-row density),
+and `SHOW_PROFILE` / `PROFILE_COLOR` / `PROFILE_MIN_FRAC` / `PROFILE_MAX_WIDTH_PX`
+(the light-blue volume bars).
 
 ### Notes / limitations
 

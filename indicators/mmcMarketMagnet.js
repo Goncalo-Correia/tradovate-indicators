@@ -19,6 +19,14 @@
 // day's volume distribution evolves. Outside the session the plots return
 // nothing (the lines break), matching nySessionAtrLevels.js.
 //
+// Rendering (all toggleable in CONFIG):
+//   * magnet / VAH / VAL as plotted lines (magenta solid, green/red dashed);
+//   * a row of green down-arrows on the VAH and red up-arrows on the VAL, one
+//     per bar, so the Peak/Trough zones read as arrow rows across the session;
+//   * the volume profile itself as full-width, translucent light-blue horizontal
+//     bars whose thickness/opacity scale with volume (drawn on the last bar);
+//   * MAGNET / VAH / VAL text labels at the last bar.
+//
 // Data source: d.profile() gives per-bar volume-by-price levels
 // ({price, vol, bidVol, askVol}); available when the chart is requested with a
 // volume profile (withHistogram). If the profile is absent on a bar, we fall
@@ -37,6 +45,18 @@ const { du, px, op } = require("./tools/graphics");
 const SESSION_OPEN_MIN = 9 * 60 + 30; // 09:30 ET (NY regular session open)
 const SESSION_CLOSE_MIN = 16 * 60;    // 16:00 ET (NY regular session close)
 const SHOW_LABELS = true;             // draw "MAGNET / VAH / VAL" labels at last bar
+
+// Arrow rows: a green down-arrow on the VAH ("Peak Zone") and a red up-arrow on
+// the VAL ("Trough Zone") at every Nth in-session bar, tracing the two bands.
+const SHOW_ARROWS = true;
+const ARROW_EVERY = 1;                // draw an arrow every N bars (1 = every bar)
+
+// Volume-bar fills: the session volume profile drawn as full-width, translucent
+// light-blue horizontal bars whose thickness/opacity scale with volume.
+const SHOW_PROFILE = true;
+const PROFILE_COLOR = "#38bdf8";      // light blue
+const PROFILE_MIN_FRAC = 0.2;         // skip levels below this fraction of POC volume
+const PROFILE_MAX_WIDTH_PX = 12;      // bar thickness (px) at the POC
 
 const MAGENTA = "#e83fd8";
 const GREEN = "#22c55e";
@@ -175,11 +195,98 @@ class MmcMarketMagnet {
             val: va.val
         };
 
-        if (SHOW_LABELS && d.isLast()) {
-            result.graphics = { items: this.labels(d, va) };
+        const items = [];
+
+        // Arrow rows: one green ▼ on the VAH and one red ▲ on the VAL per bar,
+        // so the "Peak" and "Trough" zones read as a row of arrows across the day.
+        if (SHOW_ARROWS && (index % ARROW_EVERY === 0)) {
+            items.push(this.arrow("vahArrow", d.index(), va.vah, "down", GREEN));
+            items.push(this.arrow("valArrow", d.index(), va.val, "up", RED));
+        }
+
+        // Drawn once, on the most recent bar:
+        if (d.isLast()) {
+            if (SHOW_PROFILE) {
+                this.profileBars().forEach((b) => items.push(b));
+            }
+            if (SHOW_LABELS) {
+                this.labels(d, va).forEach((l) => items.push(l));
+            }
+        }
+
+        if (items.length) {
+            result.graphics = { items };
         }
 
         return result;
+    }
+
+    // A small filled triangle centred on `price` at bar `index`.
+    // dir "down" = green ▼ sitting on the VAH; "up" = red ▲ on the VAL.
+    arrow(key, index, price, dir, color) {
+        const half = 3;   // half-width of the arrow (px)
+        const base = 7;   // distance of the flat side from the line (px)
+        const tip = 1;    // distance of the tip from the line (px)
+        // In grid space, subtracting px moves UP, adding px moves DOWN.
+        const y = (d) => op(du(price), d < 0 ? "-" : "+", px(Math.abs(d)));
+        const points = dir === "down"
+            ? [
+                { x: op(du(index), "-", px(half)), y: y(-base) },
+                { x: op(du(index), "+", px(half)), y: y(-base) },
+                { x: du(index), y: y(-tip) }
+            ]
+            : [
+                { x: op(du(index), "-", px(half)), y: y(base) },
+                { x: op(du(index), "+", px(half)), y: y(base) },
+                { x: du(index), y: y(tip) }
+            ];
+        return {
+            tag: "Shapes",
+            key,
+            primitives: [{ tag: "Polygon", points }],
+            fillStyle: { color, opacity: 0.9 }
+        };
+    }
+
+    // The session volume profile as full-width, translucent light-blue bars.
+    // Thickness and opacity scale with each level's volume relative to the POC.
+    profileBars() {
+        const bars = [];
+        const vals = Array.from(this.levels.values());
+        if (!vals.length) {
+            return bars;
+        }
+        let maxVol = 0;
+        for (let i = 0; i < vals.length; ++i) {
+            if (vals[i].vol > maxVol) {
+                maxVol = vals[i].vol;
+            }
+        }
+        if (maxVol <= 0) {
+            return bars;
+        }
+        let k = 0;
+        for (let i = 0; i < vals.length; ++i) {
+            const frac = vals[i].vol / maxVol;
+            if (frac < PROFILE_MIN_FRAC) {
+                continue;
+            }
+            const width = Math.max(1, Math.round(frac * PROFILE_MAX_WIDTH_PX));
+            const opacity = Math.min(0.6, 0.12 + frac * 0.5);
+            bars.push({
+                tag: "LineSegments",
+                key: "vp" + (k++),
+                lines: [{
+                    tag: "Line",
+                    a: { x: du(0), y: du(vals[i].price) },
+                    b: { x: du(1), y: du(vals[i].price) },
+                    infiniteStart: true,
+                    infiniteEnd: true
+                }],
+                lineStyle: { lineWidth: width, color: PROFILE_COLOR, opacity }
+            });
+        }
+        return bars;
     }
 
     labels(d, va) {
@@ -193,8 +300,7 @@ class MmcMarketMagnet {
         });
         return [
             mk("mag", va.magnet, "MAGNET (POC)", MAGENTA),
-            mk("vah", va.vah, `VAH ${this.props.valueAreaPct}%`, GREEN),
-            mk("val", va.val, `VAL ${this.props.valueAreaPct}%`, RED)
+            mk("vah", va.vah, `VAH ${this.props.valueAreaPct}%`, GREEN)
         ];
     }
 }

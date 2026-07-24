@@ -166,29 +166,32 @@ class mmcScalpProMeter {
             });
         }
 
+        // Text labels are indented a bit further right than the meter boxes.
+        const labelX = startX + 16;
+
         // BUY% / SELL% label — green / red / yellow (balanced)
         const balanced = Math.abs(s.buyPct - 50) <= this.props.balanceThreshold;
         const buySellColor = balanced ? YELLOW : (s.buyPct > s.sellPct ? GREEN : RED);
         items.push(this.label(
             "buySell",
             `BUY ${s.buyPct}%   SELL ${s.sellPct}%`,
-            startX, topY + boxH + 12,
+            labelX, topY + boxH + 12,
             buySellColor, frameOrigin, 13, "bold"
         ));
 
         // Trend label — only during an active directional move
         if (s.bullishActive) {
-            items.push(this.label("trend", "TREND ▲  EMA > VWAP", startX, topY + boxH + 32, GREEN, frameOrigin, 12));
+            items.push(this.label("trend", "TREND ▲  EMA > VWAP", labelX, topY + boxH + 32, GREEN, frameOrigin, 12));
         }
         else if (s.bearishActive) {
-            items.push(this.label("trend", "TREND ▼  EMA < VWAP", startX, topY + boxH + 32, RED, frameOrigin, 12));
+            items.push(this.label("trend", "TREND ▼  EMA < VWAP", labelX, topY + boxH + 32, RED, frameOrigin, 12));
         }
 
         // Volume label — cyan + ▲ on a spike, otherwise grey
         const volTxt = s.volumeSpike
             ? `VOL ${fmt(s.volume)} ▲ (prev ${fmt(s.prevVolume)})`
             : `VOL ${fmt(s.volume)} (prev ${fmt(s.prevVolume)})`;
-        items.push(this.label("vol", volTxt, startX, topY + boxH + 52, s.volumeSpike ? CYAN : GREY, frameOrigin, 12));
+        items.push(this.label("vol", volTxt, labelX, topY + boxH + 52, s.volumeSpike ? CYAN : GREY, frameOrigin, 12));
 
         return items;
     }
