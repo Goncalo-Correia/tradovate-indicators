@@ -88,7 +88,7 @@ function easternParts(date) {
     };
 }
 
-class MmcMarketMagnet {
+class MarketMagnet {
     init() {
         this.tickSize = (this.contractInfo && this.contractInfo.tickSize) || 0.01;
         this.resetProfile();
@@ -179,14 +179,16 @@ class MmcMarketMagnet {
         }
 
         if (!inSession) {
-            return {};
+            // Clear rather than omit, so an out-of-session bar cannot hold on to
+            // graphics it rendered while it was still the last bar.
+            return { graphics: false };
         }
 
         this.accumulate(d);
 
         const va = this.valueArea(this.props.valueAreaPct / 100);
         if (!va) {
-            return {};
+            return { graphics: false };
         }
 
         const result = {
@@ -214,9 +216,10 @@ class MmcMarketMagnet {
             }
         }
 
-        if (items.length) {
-            result.graphics = { items };
-        }
+        // Assign `graphics` on every bar. Omitting the key leaves a bar holding
+        // whatever it last rendered, so the isLast()-only labels and profile bars
+        // pile up across the chart as new bars form. `false` means "nothing here".
+        result.graphics = items.length ? { items } : false;
 
         return result;
     }
@@ -296,7 +299,9 @@ class MmcMarketMagnet {
             point: { x: op(du(d.index()), "+", px(6)), y: du(price) },
             text,
             style: { fontSize: 11, fontWeight: "bold", fill: color },
-            textAlignment: "leftMiddle"
+            textAlignment: "rightMiddle",
+            // Single-render: drawn once for the series, not once per bar.
+            global: true
         });
         return [
             mk("mag", va.magnet, "MAGNET (POC)", MAGENTA),
@@ -306,9 +311,9 @@ class MmcMarketMagnet {
 }
 
 module.exports = {
-    name: "mmcMarketMagnet",
+    name: "marketMagnet",
     description: "MMC Market Magnet (PSR)",
-    calculator: MmcMarketMagnet,
+    calculator: MarketMagnet,
     inputType: meta.InputType.BARS,
     areaChoice: meta.AreaChoice.OVERLAY,
     params: {
@@ -319,7 +324,7 @@ module.exports = {
         vah: { title: "High Band (VAH)" },
         val: { title: "Low Band (VAL)" }
     },
-    tags: [predef.tags.Volumes, "MMC"],
+    tags: ["Custom Indicators"],
     schemeStyles: {
         dark: {
             magnet: predef.styles.plot({ color: MAGENTA, lineWidth: 2 }),

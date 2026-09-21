@@ -36,7 +36,7 @@ git commit -m "<concise message describing what changed>"
 Write a real commit message summarizing the actual changes (not "deploy"). End the message with the standard trailer:
 
 ```
-Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Co-Authored-By: Claude <noreply@anthropic.com>
 ```
 
 If `git commit` reports nothing to commit, that's fine — continue to the push steps (there may still be unpushed commits).

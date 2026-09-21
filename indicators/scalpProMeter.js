@@ -32,7 +32,28 @@ const { du, px, op } = require("./tools/graphics");
 // on a fresh EMA/VWAP cross). Use Tradovate's built-in alerts for sound.
 //
 
-class mmcScalpProMeter {
+// ============================== CONFIG ======================================
+// HUD geometry. All values are PIXELS measured inward from the pane corner named
+// by HUD_CORNER. Tradovate draws its own indicator title across the top-left of
+// the pane, so HUD_TOP must stay large enough for the meter to clear it.
+const HUD_CORNER = { cs: "frame", h: "left", v: "top" };
+
+const HUD_X = 12;             // left inset of the whole HUD (meter + labels)
+const HUD_TOP = 26;           // top inset; >= ~24 keeps the meter off Tradovate's title
+
+const HUD_BOX_W = 12;         // strength-meter box width
+const HUD_BOX_H = 12;         // strength-meter box height
+const HUD_BOX_GAP = 4;        // horizontal gap between meter boxes
+
+const HUD_LABEL_INDENT = 16;  // labels' extra indent relative to the meter; 0 = flush
+const HUD_LABEL_GAP = 14;     // vertical gap between the meter row and the first label
+const HUD_LINE_H = 22;        // vertical distance between consecutive label lines
+
+const HUD_FONT_MAIN = 13;     // BUY%/SELL% label
+const HUD_FONT_SUB = 12;      // trend and volume labels
+// ============================================================================
+
+class ScalpProMeter {
     init() {
         this.ema = EMA(this.props.emaPeriod);
         this.prevEma = undefined;
@@ -124,24 +145,19 @@ class mmcScalpProMeter {
         const GREY = "#9ca3af";
 
         const items = [];
-        const frameOrigin = { cs: "frame", h: "left", v: "top" };
+        const frameOrigin = HUD_CORNER;
 
         // 10-box strength meter, split green(buy) / red(sell)
         const boxes = this.props.meterBoxes;
         const greenBoxes = Math.max(0, Math.min(boxes, Math.round(s.buyFrac * boxes)));
-        const boxW = 12;
-        const boxH = 12;
-        const gap = 4;
-        const startX = 12;
-        const topY = 12;
 
         const rect = (i) => ({
             tag: "Rectangle",
             position: {
-                x: px(startX + boxW / 2 + i * (boxW + gap)),
-                y: px(topY + boxH / 2)
+                x: px(HUD_X + HUD_BOX_W / 2 + i * (HUD_BOX_W + HUD_BOX_GAP)),
+                y: px(HUD_TOP + HUD_BOX_H / 2)
             },
-            size: { width: px(boxW), height: px(boxH) }
+            size: { width: px(HUD_BOX_W), height: px(HUD_BOX_H) }
         });
 
         const greenPrimitives = [];
@@ -166,8 +182,13 @@ class mmcScalpProMeter {
             });
         }
 
-        // Text labels are indented a bit further right than the meter boxes.
-        const labelX = startX + 16;
+        const labelX = HUD_X + HUD_LABEL_INDENT;
+        // y-centre of label row `n` (0-based), stacked below the meter.
+        const rowY = (n) => HUD_TOP + HUD_BOX_H + HUD_LABEL_GAP + n * HUD_LINE_H;
+
+        // The trend row is conditional, but it keeps its own slot so the volume
+        // row does not jump up and down as the trend appears and disappears.
+        let row = 0;
 
         // BUY% / SELL% label — green / red / yellow (balanced)
         const balanced = Math.abs(s.buyPct - 50) <= this.props.balanceThreshold;
@@ -175,24 +196,29 @@ class mmcScalpProMeter {
         items.push(this.label(
             "buySell",
             `BUY ${s.buyPct}%   SELL ${s.sellPct}%`,
-            labelX, topY + boxH + 12,
-            buySellColor, frameOrigin, 13, "bold"
+            labelX, rowY(row++),
+            buySellColor, frameOrigin, HUD_FONT_MAIN, "bold"
         ));
 
         // Trend label — only during an active directional move
         if (s.bullishActive) {
-            items.push(this.label("trend", "TREND ▲  EMA > VWAP", labelX, topY + boxH + 32, GREEN, frameOrigin, 12));
+            items.push(this.label("trend", "TREND ▲  EMA > VWAP", labelX, rowY(row), GREEN, frameOrigin, HUD_FONT_SUB));
         }
         else if (s.bearishActive) {
-            items.push(this.label("trend", "TREND ▼  EMA < VWAP", labelX, topY + boxH + 32, RED, frameOrigin, 12));
+            items.push(this.label("trend", "TREND ▼  EMA < VWAP", labelX, rowY(row), RED, frameOrigin, HUD_FONT_SUB));
         }
+        row++;
 
         // Volume label — cyan + ▲ on a spike, otherwise grey
         const volTxt = s.volumeSpike
             ? `VOL ${fmt(s.volume)} ▲ (prev ${fmt(s.prevVolume)})`
             : `VOL ${fmt(s.volume)} (prev ${fmt(s.prevVolume)})`;
-        items.push(this.label("vol", volTxt, labelX, topY + boxH + 52, s.volumeSpike ? CYAN : GREY, frameOrigin, 12));
+        items.push(this.label("vol", volTxt, labelX, rowY(row), s.volumeSpike ? CYAN : GREY, frameOrigin, HUD_FONT_SUB));
 
+        // NOTE: do not wrap these in a Container to apply a ZIndex transform.
+        // Frame-anchored items (global: true + origin) stop rendering entirely
+        // once nested in a Container — the HUD disappears. The volume columns
+        // painting over the labels has to be solved some other way.
         return items;
     }
 
@@ -203,7 +229,10 @@ class mmcScalpProMeter {
             point: { x: px(x), y: px(y) },
             text,
             style: { fontSize: fontSize || 12, fontWeight: fontWeight || "normal", fill: color },
-            textAlignment: "leftMiddle",
+            // "rightMiddle" puts the text to the RIGHT of `point`. "leftMiddle"
+            // draws it to the left, which ran these labels off the left edge of
+            // the pane so only their tails were visible.
+            textAlignment: "rightMiddle",
             global: true,
             origin
         };
@@ -217,9 +246,9 @@ function fmt(n) {
 }
 
 module.exports = {
-    name: "mmcScalpProMeter",
-    description: "MMC Scalp-Pro Meter (PSR)",
-    calculator: mmcScalpProMeter,
+    name: "scalpProMeter",
+    description: "Scalp-Pro Meter (PSR)",
+    calculator: ScalpProMeter,
     params: {
         emaPeriod: predef.paramSpecs.period(14),
         meterBoxes: predef.paramSpecs.number(10, 1, 2),
@@ -239,7 +268,15 @@ module.exports = {
         predef.plotters.dots("buyVolume"),
         predef.plotters.dots("sellVolume")
     ],
-    tags: [predef.tags.Volumes, "MMC"],
+    // Autoscale on the VOLUME fields only. `ema` and `vwap` are price-valued
+    // (~22,000 on NQ) and are carried purely so the HUD can compare them; if
+    // they are left in the autoscale set the pane stretches to fit the price,
+    // and the volume histogram collapses into a sliver along the bottom.
+    scaler: {
+        type: "multiPath",
+        fields: ["volume", "buyVolume", "sellVolume"]
+    },
+    tags: ["Custom Indicators"],
     schemeStyles: {
         dark: {
             volume: predef.styles.plot({ color: "#3b82f6", lineWidth: 1 }),

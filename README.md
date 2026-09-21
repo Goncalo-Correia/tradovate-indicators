@@ -2,9 +2,20 @@
 
 Custom indicators for the [Tradovate custom-indicator API](https://tradovate.github.io/custom-indicators/).
 
-## MMC Scalp-Pro Meter (PSR)
+All of them are tagged `tags: ["Custom Indicators"]`, so once pasted into the Code
+Explorer they appear together under a single **Custom Indicators** group in Tradovate's
+indicator dropdown rather than being scattered among the built-in categories.
 
-[`indicators/mmcScalpProMeter.js`](indicators/mmcScalpProMeter.js)
+| File | Shows in Tradovate as |
+|---|---|
+| [`indicators/scalpProMeter.js`](indicators/scalpProMeter.js) | Scalp-Pro Meter (PSR) |
+| [`indicators/marketMagnet.js`](indicators/marketMagnet.js) | MMC Market Magnet (PSR) |
+| [`indicators/nySessionAtrLevels.js`](indicators/nySessionAtrLevels.js) | NY Session ATR Levels |
+| [`indicators/sessionRangeLevels.js`](indicators/sessionRangeLevels.js) | Session Range Levels |
+
+## Scalp-Pro Meter (PSR)
+
+[`indicators/scalpProMeter.js`](indicators/scalpProMeter.js)
 
 A faithful port of the **"Scalp Pro Meter PSR"** ThinkorSwim indicator by the
 *Million-Dollar-Margin Club* (MMC) — the tool used in the "Professor's Live" morning
@@ -53,6 +64,21 @@ const buyFrac    = denom > 0 ? buyVolume / denom : 0.5;
 | `meterBoxes` | 10 | Number of boxes in the strength meter |
 | `balanceThreshold` | 6 | How close to 50/50 (in %) counts as "balanced" (yellow label) |
 
+HUD placement is not a UI parameter — it lives in the `CONFIG` block at the top of the
+file, in pixels measured inward from the corner named by `HUD_CORNER`:
+
+| Constant | Default | Effect |
+|---|---|---|
+| `HUD_X` / `HUD_TOP` | 12 / 26 | Position of the whole HUD (meter + labels). `HUD_TOP` must stay ≥ ~24 so the meter clears Tradovate's own pane title. |
+| `HUD_BOX_W` / `HUD_BOX_H` / `HUD_BOX_GAP` | 12 / 12 / 4 | Strength-meter box size and spacing |
+| `HUD_LABEL_INDENT` | 16 | Labels' indent relative to the meter; `0` = flush |
+| `HUD_LABEL_GAP` | 14 | Gap between the meter row and the first label |
+| `HUD_LINE_H` | 22 | Vertical spacing between label lines |
+| `HUD_FONT_MAIN` / `HUD_FONT_SUB` | 13 / 12 | Font sizes |
+
+The TREND row is only shown during an active move but always reserves its slot, so the
+VOL row underneath does not jump as the trend appears and disappears.
+
 ### Limitations vs the original
 
 - **No audio.** The Tradovate custom-indicator API has no sound primitive, so the
@@ -61,13 +87,23 @@ const buyFrac    = denom > 0 ? buyVolume / denom : 0.5;
 - **VWAP** is the standard session VWAP (resets per trading day, uses the bar's volume
   profile when available, otherwise typical price × volume) — matching the built-in
   Tradovate VWAP.
+- **The pane autoscales on the volume series only.** `ema` and `vwap` are returned from
+  `map` so the HUD can compare them, but they are price-valued (~22,000 on NQ) and are
+  excluded from the axis via `scaler: { type: "multiPath", fields: [...] }`. Without
+  that, the pane stretches to fit the price and the volume histogram collapses into a
+  sliver along the bottom. If you add another price-valued output, add it to `plots`
+  but **not** to `scaler.fields`.
+- **A tall volume bar can paint over the HUD labels.** Frame-anchored graphics cannot be
+  forced in front: wrapping them in a `Container` with a `ZIndex` transform makes them
+  stop rendering altogether (tried and reverted). Give the HUD more clearance by raising
+  `HUD_TOP`, or shrink the bars by reserving headroom in `scaler`.
 
 ### Install
 
 1. In Tradovate, open **Chart → Indicators → the code editor (Code Explorer)**.
 2. Create a new indicator and paste the contents of
-   [`indicators/mmcScalpProMeter.js`](indicators/mmcScalpProMeter.js).
-3. Save, then add **"MMC Scalp-Pro Meter (PSR)"** to a chart (it opens in a new pane).
+   [`indicators/scalpProMeter.js`](indicators/scalpProMeter.js).
+3. Save, then add **"Scalp-Pro Meter (PSR)"** to a chart (it opens in a new pane).
    Best on a 1-minute chart, per the original.
 
 The `require("./tools/...")` calls resolve against Tradovate's bundled SDK modules
@@ -123,7 +159,7 @@ UI parameters — edit them in the code before pasting.
 
 ## MMC Market Magnet (PSR)
 
-[`indicators/mmcMarketMagnet.js`](indicators/mmcMarketMagnet.js)
+[`indicators/marketMagnet.js`](indicators/marketMagnet.js)
 
 A port of the *Million-Dollar-Margin Club* **"Market Magnet / Market Magnet PSR"**
 ThinkorSwim indicator. Despite the "magnetic force" marketing, it is a **session
@@ -184,7 +220,7 @@ and `SHOW_PROFILE` / `PROFILE_COLOR` / `PROFILE_MIN_FRAC` / `PROFILE_MAX_WIDTH_P
 
 1. In Tradovate, open **Chart → Indicators → the code editor (Code Explorer)**.
 2. Create a new indicator and paste the contents of
-   [`indicators/mmcMarketMagnet.js`](indicators/mmcMarketMagnet.js).
+   [`indicators/marketMagnet.js`](indicators/marketMagnet.js).
 3. Save, then add **"MMC Market Magnet (PSR)"** to a chart (it overlays on the
    price pane). Best on an intraday chart with volume profile enabled.
 

@@ -150,5 +150,6 @@ module.exports = {
         atrPeriod: predef.paramSpecs.period(14)
     },
     plots,
+    tags: ["Custom Indicators"],
     schemeStyles
 };

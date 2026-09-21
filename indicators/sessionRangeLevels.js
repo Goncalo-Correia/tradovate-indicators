@@ -180,7 +180,12 @@ SESSIONS.forEach(function (s) {
     schemeStyles.light[hi] = predef.styles.plot({ color: s.lightColor, lineWidth: LINE_WIDTH });
     schemeStyles.light[lo] = predef.styles.plot({ color: s.lightColor, lineWidth: LINE_WIDTH, lineStyle: DASHED });
 
-    params[s.param] = predef.paramSpecs.bool(true);
+    // Literal boolean param definition rather than predef.paramSpecs.bool():
+    // `bool` is not part of the documented API, and if the bundled predef does
+    // not provide it the call throws while the module is being loaded, so the
+    // indicator never registers and silently vanishes from Tradovate's dropdown.
+    // { type: "boolean", def } is the documented shape (params.BooleanParameterDefinition).
+    params[s.param] = { type: "boolean", def: true };
 });
 
 class SessionRangeLevels {
@@ -238,7 +243,7 @@ class SessionRangeLevels {
 
         // Too coarse for session windows to mean anything — draw nothing.
         if (this.barMinutes !== undefined && this.barMinutes > MAX_BAR_MINUTES) {
-            return {};
+            return { graphics: false };
         }
 
         const et = easternParts(d.timestamp());
@@ -253,7 +258,7 @@ class SessionRangeLevels {
         this.accumulate(d, et.minutes);
 
         if (DRAW_ONLY_IN_RTH && !inWindow(et.minutes, RTH_OPEN_MIN, RTH_CLOSE_MIN)) {
-            return {};
+            return { graphics: false };
         }
 
         const result = {};
@@ -276,9 +281,14 @@ class SessionRangeLevels {
             entries.push({ key: s.id + "L", price: r.lo, text: s.loLabel, session: s });
         }
 
-        if (SHOW_LABELS && d.isLast() && entries.length) {
-            result.graphics = { items: this.labels(d, entries) };
-        }
+        // `graphics` must be assigned on EVERY bar, not just the last one. If the
+        // key is simply omitted, a bar that was the last bar at the time it was
+        // mapped keeps its cached label forever, and the labels smear across the
+        // chart as new bars form. `false` is the documented "no graphics here"
+        // value (see the GraphicsResponse example: `graphics: d.isLast() && {...}`).
+        result.graphics = (SHOW_LABELS && d.isLast() && entries.length)
+            ? { items: this.labels(d, entries) }
+            : false;
 
         return result;
     }
@@ -296,7 +306,10 @@ class SessionRangeLevels {
                 },
                 text,
                 style: { fontSize: LABEL_FONT_SIZE, fontWeight: "bold", fill: e.session.color },
-                textAlignment: "leftMiddle"
+                textAlignment: "rightMiddle",
+                // "global" marks this a SINGLE-RENDER object: drawn once for the
+                // series rather than once per bar. Without it the label repeats.
+                global: true
             };
         });
     }
@@ -310,6 +323,6 @@ module.exports = {
     areaChoice: meta.AreaChoice.OVERLAY,
     params,
     plots,
-    tags: [predef.tags.Levels],
+    tags: ["Custom Indicators"],
     schemeStyles
 };
