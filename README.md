@@ -187,3 +187,86 @@ and `SHOW_PROFILE` / `PROFILE_COLOR` / `PROFILE_MIN_FRAC` / `PROFILE_MAX_WIDTH_P
    [`indicators/mmcMarketMagnet.js`](indicators/mmcMarketMagnet.js).
 3. Save, then add **"MMC Market Magnet (PSR)"** to a chart (it overlays on the
    price pane). Best on an intraday chart with volume profile enabled.
+
+## Session Range Levels
+
+[`indicators/sessionRangeLevels.js`](indicators/sessionRangeLevels.js)
+
+Eight horizontal levels marking the high and low of each major trading session, each
+with a short label at the right edge so the lines can be told apart at a glance.
+
+### What it shows
+
+| Level | Label | Window (ET) | Colour |
+|---|---|---|---|
+| Asia high / low | `ASH` / `ASL` | 18:00 → 03:00 | purple |
+| London high / low | `LOH` / `LOL` | 03:00 → 09:30 | blue |
+| Pre-market high / low | `PMH` / `PML` | 04:00 → 09:30 | orange |
+| **Previous** US session high / low | `PDH` / `PDL` | 09:30 → 16:00 (prior day) | grey |
+
+Highs are solid, lows are dashed, in the same colour — so session identity reads as
+colour and high-vs-low reads as line style.
+
+Each level **updates live while its window is open and freezes when the window closes**,
+so during the US session all eight lines are flat. A line is drawn from the bar where its
+level first existed up to the current bar, so the left end of each line marks when that
+session began.
+
+Pre-market (04:00–09:30) deliberately **overlaps** London (03:00–09:30): they are two
+independently tracked ranges, not a partition of the night.
+
+### How it works
+
+The **trading day rolls at 18:00 ET** (the futures open), not at midnight, so
+Asia → London → pre-market → US all fall inside one trading day in that order and Asia
+can span midnight without special-casing. When the day rolls, the US session that just
+closed becomes `PDH`/`PDL`; today's US range is accumulated only so it can become
+tomorrow's previous-session level.
+
+Plots, scheme styles and the on/off parameters are all derived from a single `SESSIONS`
+config array at the top of the file — adding or re-timing a session is a one-object edit.
+
+Labels are staggered into **one horizontal column per session** rather than being nudged
+apart vertically. Because pre-market sits inside London's window, `PMH` and `LOH` are
+often at the same price, and there is no way to convert a price gap into a pixel gap
+without knowing the chart's zoom at map time; columns are scale-free and deterministic.
+Set `LABEL_STAGGER = false` to stack them all at one x.
+
+### Parameters
+
+| Param | Default | Meaning |
+|---|---|---|
+| `showAsia` | on | Draw `ASH` / `ASL` |
+| `showLondon` | on | Draw `LOH` / `LOL` |
+| `showPremarket` | on | Draw `PMH` / `PML` |
+| `showPrevUs` | on | Draw `PDH` / `PDL` |
+
+Session windows, colours, label text, and label placement are top-of-file constants
+(`SESSIONS`, `LABEL_*`, `DRAW_ONLY_IN_RTH`, `MAX_BAR_MINUTES`) rather than UI
+parameters — edit them in the code before pasting.
+
+### Notes / limitations
+
+- **The chart must include electronic trading hours.** On an RTH-only session template
+  the overnight bars do not exist and the Asia / London / pre-market lines will never
+  appear. This is the most likely cause of "nothing is drawing".
+- **Bars must be ≤ 60 minutes** (`MAX_BAR_MINUTES`). On coarser bars a single bar
+  straddles several session windows and the levels would be meaningless, so the
+  indicator deliberately draws nothing.
+- `PDH`/`PDL` are undefined until one full US session has been seen. On the first
+  trading day of the loaded history they may reflect a US session truncated by where
+  the chart data begins.
+- By default every known level stays drawn all day. Set `DRAW_ONLY_IN_RTH = true` to
+  hide them outside 09:30–16:00 ET, matching `nySessionAtrLevels.js`.
+- Label colours follow the dark scheme (graphics items cannot see the active scheme);
+  the plot lines themselves have proper light/dark styles.
+- **Timezone** is handled without `Intl` (hand-rolled US-Eastern DST), same as
+  `nySessionAtrLevels.js`.
+
+### Install
+
+1. In Tradovate, open **Chart → Indicators → the code editor (Code Explorer)**.
+2. Create a new indicator and paste the contents of
+   [`indicators/sessionRangeLevels.js`](indicators/sessionRangeLevels.js).
+3. Save, then add **"Session Range Levels"** to a chart (it overlays on the price pane).
+   Use an intraday chart with an **ETH** session template.
