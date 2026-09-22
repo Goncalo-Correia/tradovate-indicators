@@ -121,8 +121,8 @@ ATR terms. The ladder re-anchors on every new candle.
 ### What it shows
 
 - A **center line** at the **open of the newest candle** (amber), labelled `OPEN`.
-- **10 lines above and 10 lines below** the center, each spaced by 1× ATR, labelled
-  `+1 … +10` / `-1 … -10` just right of the current candle.
+- **5 lines above and 5 lines below** the center, each spaced by 1× ATR, labelled
+  `+1 … +5` / `-1 … -5` just right of the current candle.
 - The lines are **infinite horizontals** spanning the chart (set `EXTEND_LEFT = false` to
   have them start at the current candle and run only to the right).
 - **Exactly one ladder exists at a time.** It updates on the live candle and re-anchors

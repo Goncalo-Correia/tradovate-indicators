@@ -3,7 +3,7 @@
 // ----------------------------------------------------------------------------
 // Draws a ladder of horizontal levels anchored to the CURRENT candle:
 //   - The CENTER line sits at the OPEN of the newest (right-most) candle.
-//   - 10 lines above and 10 lines below, each spaced by 1x ATR.
+//   - 5 lines above and 5 lines below, each spaced by 1x ATR.
 //   - The whole ladder is re-drawn on the live candle as it updates, and
 //     RE-ANCHORS as soon as a new candle opens. Only one ladder ever exists:
 //     the previous candle's lines disappear when the new candle starts.
@@ -32,7 +32,7 @@ const meta = require("./tools/meta");
 const { du, px, op } = require("./tools/graphics");
 
 // ============================== CONFIG ======================================
-const LINES = 10;                     // number of lines above AND below center
+const LINES = 5;                      // number of lines above AND below center
 const SESSION_ONLY = true;            // true : only draw 09:30-16:00 ET
                                       // false: draw on every bar, any time
 const SESSION_OPEN_MIN = 9 * 60 + 30; // 09:30 ET  (NY regular session open)
