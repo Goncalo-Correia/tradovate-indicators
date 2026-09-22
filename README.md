@@ -114,21 +114,25 @@ no local dependencies are needed inside the platform.
 
 [`indicators/nySessionAtrLevels.js`](indicators/nySessionAtrLevels.js)
 
-Draws a fan of horizontal ATR-spaced levels anchored to the New York regular session,
-useful for gauging how far price has travelled from the open in ATR terms.
+Draws a fan of horizontal ATR-spaced levels anchored to the **current (right-most)
+candle**, useful for gauging how far price could travel from where this candle opened in
+ATR terms. The ladder re-anchors on every new candle.
 
 ### What it shows
 
-- A **center line** anchored to the **open of the first NY-session candle** (09:30 ET).
-- **10 lines above and 10 lines below** the center, each spaced by 1× ATR.
-- Levels are drawn **only during the NY regular session** (09:30–16:00 ET). Outside the
-  session the plots return nothing, so the lines break; they re-anchor automatically at
-  the next NY open.
+- A **center line** at the **open of the newest candle** (amber), labelled `OPEN`.
+- **10 lines above and 10 lines below** the center, each spaced by 1× ATR, labelled
+  `+1 … +10` / `-1 … -10` just right of the current candle.
+- The lines are **infinite horizontals** spanning the chart (set `EXTEND_LEFT = false` to
+  have them start at the current candle and run only to the right).
+- **Exactly one ladder exists at a time.** It updates on the live candle and re-anchors
+  the moment a new candle opens — the previous candle's lines are removed, so the chart
+  never accumulates old ladders.
+- Levels are drawn **only during the NY regular session** (09:30–16:00 ET); set
+  `SESSION_ONLY = false` to draw around the clock.
 
-The center price and ATR spacing are captured at the session open. By default
-(`DYNAMIC_ATR = true`) the spacing tracks the latest ATR on every candle close while the
-center stays anchored; set `DYNAMIC_ATR = false` to freeze the spacing at the open so all
-21 lines are perfectly flat for the whole session.
+Spacing uses the ATR through the **previous closed bar**, so the ladder stays perfectly
+still while the live candle forms and only jumps at the next open.
 
 ### Parameters
 
@@ -136,8 +140,9 @@ center stays anchored; set `DYNAMIC_ATR = false` to freeze the spacing at the op
 |---|---|---|
 | `atrPeriod` | 14 | ATR period (Wilder's smoothing, computed inline) |
 
-The line count, session hours, and the dynamic/fixed-spacing mode are top-of-file
-constants (`LINES`, `SESSION_OPEN_MIN`, `SESSION_CLOSE_MIN`, `DYNAMIC_ATR`) rather than
+The line count, session hours, line extension, labels and colours are top-of-file
+constants (`LINES`, `SESSION_ONLY`, `SESSION_OPEN_MIN`, `SESSION_CLOSE_MIN`,
+`EXTEND_LEFT`, `SHOW_LABELS`, `LABEL_EVERY`, `LEVEL_COLOR`, `CENTER_COLOR`) rather than
 UI parameters — edit them in the code before pasting.
 
 ### Notes / limitations
@@ -147,8 +152,14 @@ UI parameters — edit them in the code before pasting.
   Eastern trading but not parameterized for other zones.
 - **ATR** is computed inline with a simple-average warm-up until `atrPeriod` samples are
   seen, then Wilder's smoothing — no dependency on a `tools/` ATR module.
-- Default line style is a light, semi-transparent grey at 1px width; adjust per-plot
-  styling in the Tradovate UI after adding it.
+- **Lines are `graphics`, not `plots`.** A plot holds one value per bar, so an anchor
+  that moves with every candle would paint a staircase instead of horizontal lines.
+  Emitting infinite `LineSegments` only on the last bar (`global: true`) is what makes
+  the previous candle's ladder disappear. The trade-off: no per-line entry in the chart
+  legend and **no colour picker in the Tradovate UI** — restyle via the `LEVEL_COLOR` /
+  `CENTER_COLOR` / `*_WIDTH` constants at the top of the file.
+- Default style is a light, semi-transparent grey at 1px for the ATR lines and amber for
+  the center line.
 
 ### Install
 
