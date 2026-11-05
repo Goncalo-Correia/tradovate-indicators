@@ -331,27 +331,29 @@ session is trading, otherwise the time left until it next opens (`3h 12m`,
 
 ### Sessions
 
-| Session | Hours (local time) | Time zone / DST |
-|---|---|---|
-| Asia | 09:00–18:00 Tokyo | UTC+9, no DST |
-| London | 08:00–16:30 London | GMT/BST (last Sun Mar → last Sun Oct) |
-| NY | 09:30–16:00 New York | EST/EDT (2nd Sun Mar → 1st Sun Nov) |
+The futures-trading windows in US Eastern time — the same ones Session Range
+Levels uses, so the two indicators agree:
 
-Hours, labels, colors and HUD placement are top-of-file constants (`SESSIONS`,
-`MARGIN_*`, `*_COLOR`) — edit them before pasting. Each session uses its own DST
-rules, so the gap between the UK and US switch dates is handled.
+| Session | Hours (ET) | Opens on |
+|---|---|---|
+| Asia | 18:00 → 03:00 (overnight, starts at the Globex open) | Sun–Thu evenings |
+| London | 03:00 → 09:30 | Mon–Fri |
+| NY | 09:30 → 16:00 | Mon–Fri |
+
+Hours, open days, labels, colors and HUD placement are top-of-file constants
+(`SESSIONS`, `MARGIN_*`, `*_COLOR`) — edit them before pasting. A session whose
+close is earlier than its open runs past midnight. Each session can also be set in
+Tokyo or London local time via its `tz` field (e.g. the forex Asia session:
+`tz: "tokyo", open: "09:00", close: "18:00", openDays: MON_FRI`).
 
 ### Notes / limitations
 
-- Sessions open **Monday–Friday** in their local time; on a weekend the countdown
-  runs to Monday's open. **Exchange holidays are not accounted for.**
+- On a weekend the countdown runs to the next open (Asia: Sunday 18:00 ET).
+  **Exchange holidays and early closes are not accounted for.**
 - The countdown uses the wall clock (`Date.now()`) on the live bar, so it refreshes
   whenever Tradovate re-runs `map()` on incoming ticks; in a very quiet market it
   can lag until the next tick. Set `USE_WALL_CLOCK = false` to use the last bar's
   timestamp instead (for Replay).
-- These Asia/London hours are the **forex** sessions in Tokyo/London local time,
-  not the ET windows used by Session Range Levels (Asia 18:00–03:00, London
-  03:00–09:30 ET).
 
 ### Install
 

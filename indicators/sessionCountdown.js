@@ -6,13 +6,18 @@
 //   - "OPEN"            (green) while that session is trading, or
 //   - the time left until it next opens, e.g. "3h 12m" or "1d 4h 05m".
 //
-// Each session is defined in its OWN local time and converted with its own
-// DST rules (no Intl dependency, same approach as nySessionAtrLevels.js):
-//   - Asia   : Tokyo  09:00–18:00 JST  (UTC+9, no DST)
-//   - London : London 08:00–16:30      (GMT/BST: last Sun Mar → last Sun Oct)
-//   - NY     : New York 09:30–16:00 ET (EST/EDT: 2nd Sun Mar → 1st Sun Nov)
-// Sessions only open Monday–Friday in their local time, so on a weekend the
-// countdown runs to Monday's open. Exchange holidays are NOT accounted for.
+// Sessions are the futures-trading windows in US Eastern time, matching
+// sessionRangeLevels.js (DST handled without Intl):
+//   - Asia   : 18:00–03:00 ET  (starts at the Globex open; opens Sun–Thu evenings)
+//   - London : 03:00–09:30 ET  (Mon–Fri)
+//   - NY     : 09:30–16:00 ET  (Mon–Fri)
+// A session whose close is earlier than its open runs past midnight. On a
+// weekend the countdown runs to the next open (Asia: Sunday 18:00 ET).
+// Exchange holidays and early closes are NOT accounted for.
+//
+// Each session can instead be set in another market's local time via `tz`
+// ("tokyo" = UTC+9, "london" = GMT/BST, "ny" = EST/EDT), e.g. the forex Asia
+// session is { tz: "tokyo", open: "09:00", close: "18:00", openDays: MON_FRI }.
 //
 // Timing: the countdown is computed from the wall clock (Date.now()) when the
 // last bar is mapped, so it refreshes whenever Tradovate re-runs map() on the
@@ -25,12 +30,15 @@ const meta = require("./tools/meta");
 const { px } = require("./tools/graphics");
 
 // ============================== CONFIG ======================================
-// Session hours are in each session's LOCAL time, "HH:MM" 24h. Close must be
-// later than open on the same local day.
+// Hours are "HH:MM" 24h in the session's `tz`. close <= open means the session
+// runs past midnight. `openDays` lists the local weekdays (0 = Sun … 6 = Sat)
+// on which the session OPENS.
+const MON_FRI = [1, 2, 3, 4, 5];
+const SUN_THU = [0, 1, 2, 3, 4];
 const SESSIONS = [
-    { key: "asia",   label: "ASIA",   tz: "tokyo",  open: "09:00", close: "18:00" },
-    { key: "london", label: "LONDON", tz: "london", open: "08:00", close: "16:30" },
-    { key: "ny",     label: "NY",     tz: "ny",     open: "09:30", close: "16:00" }
+    { key: "asia",   label: "ASIA",   tz: "ny", open: "18:00", close: "03:00", openDays: SUN_THU },
+    { key: "london", label: "LONDON", tz: "ny", open: "03:00", close: "09:30", openDays: MON_FRI },
+    { key: "ny",     label: "NY",     tz: "ny", open: "09:30", close: "16:00", openDays: MON_FRI }
 ];
 const USE_WALL_CLOCK = true;   // false: use last bar's timestamp (Replay)
 const MARGIN_X = 48;           // px from the left edge of the pane (clears
@@ -95,21 +103,26 @@ function sessionState(session, now) {
     // Local wall-clock "now" expressed as a UTC Date
     const local = new Date(now + offsetFn(now) * 3600000);
     const localMin = local.getUTCHours() * 60 + local.getUTCMinutes();
-    const localDow = local.getUTCDay();
-    const isWeekday = localDow >= 1 && localDow <= 5;
+    const today = local.getUTCDay();
+    const yesterday = (today + 6) % 7;
+    const opensOn = function (dow) { return session.openDays.indexOf(dow) !== -1; };
 
-    if (isWeekday && localMin >= openMin && localMin < closeMin) {
+    const isOpen = closeMin > openMin
+        ? opensOn(today) && localMin >= openMin && localMin < closeMin
+        // Overnight: opened this evening, or opened yesterday and not yet closed
+        : (opensOn(today) && localMin >= openMin) ||
+          (opensOn(yesterday) && localMin < closeMin);
+    if (isOpen) {
         return { open: true };
     }
 
-    // Scan forward day by day (local calendar) for the next weekday open.
+    // Scan forward day by day (local calendar) for the next open.
     for (let k = 0; k <= 7; k++) {
         const localOpen = Date.UTC(
             local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + k,
             Math.floor(openMin / 60), openMin % 60
         );
-        const dow = new Date(localOpen).getUTCDay();
-        if (dow === 0 || dow === 6) continue;
+        if (!opensOn(new Date(localOpen).getUTCDay())) continue;
         // Convert local open → UTC; refine offset at the candidate instant
         // so a DST switch between now and the open is handled.
         let utcOpen = localOpen - offsetFn(now) * 3600000;

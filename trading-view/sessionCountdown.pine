@@ -9,12 +9,14 @@
 //   - "OPEN"            (green) while that session is trading, or
 //   - the time left until it next opens, e.g. "3h 12m" or "1d 4h 05m".
 //
-// Each session is defined in its own local time zone (DST handled natively):
-//   - Asia   : Tokyo    09:00–18:00  ("Asia/Tokyo")
-//   - London : London   08:00–16:30  ("Europe/London")
-//   - NY     : New York 09:30–16:00  ("America/New_York")
-// Sessions only open Monday–Friday in their local time, so on a weekend the
-// countdown runs to Monday's open. Exchange holidays are NOT accounted for.
+// Sessions are the futures-trading windows in US Eastern time ("America/New_York",
+// DST handled natively), matching Session Range Levels:
+//   - Asia   : 18:00–03:00 ET  (starts at the Globex open; opens Sun–Thu evenings)
+//   - London : 03:00–09:30 ET  (Mon–Fri)
+//   - NY     : 09:30–16:00 ET  (Mon–Fri)
+// A session whose close is earlier than its open runs past midnight. On a
+// weekend the countdown runs to the next open (Asia: Sunday 18:00 ET).
+// Exchange holidays and early closes are NOT accounted for.
 //
 // Timing: uses the wall clock (timenow) on the last bar, so it refreshes on
 // each realtime tick. Turn off "Use wall clock" to base it on the last bar's
@@ -23,41 +25,46 @@
 indicator("Session Countdown", shorttitle = "Sessions", overlay = true)
 
 // ============================== CONFIG ======================================
-asiaSess   = input.session("0900-1800", "Asia session (Tokyo time)")
-londonSess = input.session("0800-1630", "London session (London time)")
-nySess     = input.session("0930-1600", "NY session (New York time)")
+asiaSess   = input.session("1800-0300", "Asia session (ET, opens Sun–Thu)")
+londonSess = input.session("0300-0930", "London session (ET, Mon–Fri)")
+nySess     = input.session("0930-1600", "NY session (ET, Mon–Fri)")
 useWall    = input.bool(true, "Use wall clock", tooltip = "Off: use the last bar's time (Bar Replay).")
 labelColor = input.color(#9ca3af, "Label color")
 waitColor  = input.color(#e5e7eb, "Countdown color")
 openColor  = input.color(#22c55e, "OPEN color")
+
+TZ = "America/New_York"
 // ============================================================================
 
 // "HHMM-HHMM" -> minutes of day
 sessOpenMin(s)  => int(str.tonumber(str.substring(s, 0, 2))) * 60 + int(str.tonumber(str.substring(s, 2, 4)))
 sessCloseMin(s) => int(str.tonumber(str.substring(s, 5, 7))) * 60 + int(str.tonumber(str.substring(s, 7, 9)))
 
-isWeekday(t, tz) =>
+// Does the session OPEN on the local weekday of `t`?
+// sunToThu: Sun–Thu evenings (Asia); otherwise Mon–Fri.
+opensOn(int t, string tz, bool sunToThu) =>
     wd = dayofweek(t, tz)
-    wd != dayofweek.saturday and wd != dayofweek.sunday
+    sunToThu ? wd >= dayofweek.sunday and wd <= dayofweek.thursday : wd >= dayofweek.monday and wd <= dayofweek.friday
 
 // Returns [isOpen, msUntilNextOpen]
-sessionState(string sess, string tz, int now) =>
+sessionState(string sess, string tz, int now, bool sunToThu) =>
     oMin = sessOpenMin(sess)
     cMin = sessCloseMin(sess)
     y  = year(now, tz)
     mo = month(now, tz)
     dd = dayofmonth(now, tz)
     oH = int(math.floor(oMin / 60))
-    cH = int(math.floor(cMin / 60))
-    todayOpen  = timestamp(tz, y, mo, dd, oH, oMin % 60)
-    todayClose = timestamp(tz, y, mo, dd, cH, cMin % 60)
-    isOpen = isWeekday(now, tz) and now >= todayOpen and now < todayClose
+    nowMin = hour(now, tz) * 60 + minute(now, tz)
+    // Noon anchors avoid DST edge cases when asking "which weekday is it"
+    todayNoon     = timestamp(tz, y, mo, dd, 12, 0)
+    yesterdayNoon = timestamp(tz, y, mo, dd - 1, 12, 0)
+    isOpen = cMin > oMin ? opensOn(todayNoon, tz, sunToThu) and nowMin >= oMin and nowMin < cMin : (opensOn(todayNoon, tz, sunToThu) and nowMin >= oMin) or (opensOn(yesterdayNoon, tz, sunToThu) and nowMin < cMin)
     float msUntil = na
     if not isOpen
         // timestamp() normalizes day overflow (e.g. Jan 32 -> Feb 1)
         for k = 0 to 7
             t = timestamp(tz, y, mo, dd + k, oH, oMin % 60)
-            if isWeekday(t, tz) and t > now
+            if opensOn(t, tz, sunToThu) and t > now
                 msUntil := t - now
                 break
     [isOpen, msUntil]
@@ -84,9 +91,9 @@ setRow(int row, string name, bool isOpen, float msUntil) =>
 
 if barstate.islast
     now = useWall ? timenow : time
-    [aOpen, aMs] = sessionState(asiaSess, "Asia/Tokyo", now)
-    [lOpen, lMs] = sessionState(londonSess, "Europe/London", now)
-    [nOpen, nMs] = sessionState(nySess, "America/New_York", now)
+    [aOpen, aMs] = sessionState(asiaSess, TZ, now, true)
+    [lOpen, lMs] = sessionState(londonSess, TZ, now, false)
+    [nOpen, nMs] = sessionState(nySess, TZ, now, false)
     setRow(0, "ASIA",   aOpen, aMs)
     setRow(1, "LONDON", lOpen, lMs)
     setRow(2, "NY",     nOpen, nMs)
