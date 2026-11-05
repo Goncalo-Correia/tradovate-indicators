@@ -14,10 +14,14 @@
 //   * "Peak Zone"  (top half, green)  = magnet .. VAH.
 //   * "Trough Zone"(bottom half, red) = VAL .. magnet.
 //
-// The profile is accumulated across the NY regular session (09:30-16:00 ET)
-// and re-anchored each session, so the three levels update in real time as the
-// day's volume distribution evolves. Outside the session the plots return
-// nothing (the lines break), matching nySessionAtrLevels.js.
+// A profile is built inside each of three ET windows (see WINDOWS in CONFIG):
+//   * Asia   — first 2 hours of the Asia session   18:00-20:00 ET
+//   * London — first 2 hours of the London session 03:00-05:00 ET
+//   * NY     — the whole NY regular session         09:30-16:00 ET
+// Each window starts a FRESH profile, so the three levels update in real time
+// as that window's volume distribution evolves. Outside the windows the plots
+// return nothing (the lines break). Asia/London need an ETH chart — on an
+// RTH-only session template those bars do not exist.
 //
 // Rendering (all toggleable in CONFIG):
 //   * magnet / VAH / VAL as plotted lines (magenta solid, green/red dashed);
@@ -42,8 +46,15 @@ const meta = require("./tools/meta");
 const { du, px, op } = require("./tools/graphics");
 
 // ============================== CONFIG ======================================
-const SESSION_OPEN_MIN = 9 * 60 + 30; // 09:30 ET (NY regular session open)
-const SESSION_CLOSE_MIN = 16 * 60;    // 16:00 ET (NY regular session close)
+// Profile windows in ET minutes-of-day. Each window gets its own profile,
+// reset at the window's start. `end` must be later than `start` (a window may
+// not cross midnight). Session starts match sessionRangeLevels.js /
+// sessionCountdown.js (Asia 18:00, London 03:00, NY 09:30 ET).
+const WINDOWS = [
+    { id: "asia",   label: "ASIA",   start: 18 * 60,      end: 20 * 60 }, // Asia, first 2h
+    { id: "london", label: "LONDON", start: 3 * 60,       end: 5 * 60 },  // London, first 2h
+    { id: "ny",     label: "NY",     start: 9 * 60 + 30,  end: 16 * 60 }  // NY, whole session
+];
 const SHOW_LABELS = true;             // draw "MAGNET / VAH / VAL" labels at last bar
 
 // Arrow rows: a green down-arrow on the VAH ("Peak Zone") and a red up-arrow on
@@ -88,11 +99,21 @@ function easternParts(date) {
     };
 }
 
+// The profile window containing ET minute-of-day `minutes`, or undefined.
+function windowAt(minutes) {
+    for (let i = 0; i < WINDOWS.length; ++i) {
+        if (minutes >= WINDOWS[i].start && minutes < WINDOWS[i].end) {
+            return WINDOWS[i];
+        }
+    }
+    return undefined;
+}
+
 class MarketMagnet {
     init() {
         this.tickSize = (this.contractInfo && this.contractInfo.tickSize) || 0.01;
         this.resetProfile();
-        this.sessionDayKey = undefined;
+        this.windowKey = undefined; // "<window id>:<ET dayKey>" of the active profile
     }
 
     resetProfile() {
@@ -169,19 +190,20 @@ class MarketMagnet {
 
     map(d, index) {
         const et = easternParts(d.timestamp());
-        const inSession =
-            et.minutes >= SESSION_OPEN_MIN && et.minutes < SESSION_CLOSE_MIN;
+        const win = windowAt(et.minutes);
 
-        // New NY session -> start a fresh profile.
-        if (inSession && et.dayKey !== this.sessionDayKey) {
-            this.sessionDayKey = et.dayKey;
-            this.resetProfile();
-        }
-
-        if (!inSession) {
-            // Clear rather than omit, so an out-of-session bar cannot hold on to
+        if (!win) {
+            // Clear rather than omit, so an out-of-window bar cannot hold on to
             // graphics it rendered while it was still the last bar.
             return { graphics: false };
+        }
+
+        // First bar of a new window (or of the same window on a new day) ->
+        // start a fresh profile.
+        const windowKey = win.id + ":" + et.dayKey;
+        if (windowKey !== this.windowKey) {
+            this.windowKey = windowKey;
+            this.resetProfile();
         }
 
         this.accumulate(d);
@@ -212,7 +234,7 @@ class MarketMagnet {
                 this.profileBars().forEach((b) => items.push(b));
             }
             if (SHOW_LABELS) {
-                this.labels(d, va).forEach((l) => items.push(l));
+                this.labels(d, va, win).forEach((l) => items.push(l));
             }
         }
 
@@ -292,7 +314,8 @@ class MarketMagnet {
         return bars;
     }
 
-    labels(d, va) {
+    // Labels are prefixed with the active window ("NY MAGNET (POC)", ...).
+    labels(d, va, win) {
         const mk = (key, price, text, color) => ({
             tag: "Text",
             key,
@@ -304,8 +327,8 @@ class MarketMagnet {
             global: true
         });
         return [
-            mk("mag", va.magnet, "MAGNET (POC)", MAGENTA),
-            mk("vah", va.vah, `VAH ${this.props.valueAreaPct}%`, GREEN)
+            mk("mag", va.magnet, `${win.label} MAGNET (POC)`, MAGENTA),
+            mk("vah", va.vah, `${win.label} VAH ${this.props.valueAreaPct}%`, GREEN)
         ];
     }
 }

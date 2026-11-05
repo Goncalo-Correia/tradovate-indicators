@@ -1,0 +1,68 @@
+﻿//@version=6
+// ============================================================================
+// ATR Levels — TradingView (Pine Script v6) port
+// ----------------------------------------------------------------------------
+// Port of indicators/atrLevels.js.
+//
+// Draws a ladder of horizontal levels anchored to the CURRENT candle:
+//   - The CENTER line sits at the OPEN of the newest (right-most) candle.
+//   - 5 lines above and 5 lines below, each spaced by 1x ATR.
+//   - The ladder re-anchors as soon as a new candle opens; only one ladder
+//     ever exists on the chart.
+//   - Not tied to any session: drawn at all hours.
+//
+// Spacing uses the ATR through the PREVIOUS closed bar, so the ladder stays
+// still while the live candle forms. ATR is computed inline (Wilder's
+// smoothing with a simple-average warm-up) to match the Tradovate version.
+//
+// Lines are line/label objects redrawn on the last bar (not plots), for the
+// same reason as in Tradovate: a plot would paint a staircase across history.
+// ============================================================================
+indicator("ATR Levels", overlay = true, max_lines_count = 50, max_labels_count = 50)
+
+// ============================== CONFIG ======================================
+atrPeriod   = input.int(14, "ATR Period", minval = 1)
+nLines      = input.int(5, "Lines above/below", minval = 1, maxval = 20)
+extendLeft  = input.bool(true, "Extend lines left", tooltip = "Off: lines start at the current candle and extend right only.")
+showLabels  = input.bool(true, "Show labels")
+levelColor  = input.color(color.new(#EDEDED, 40), "Level color")
+centerColor = input.color(color.new(#FFD54F, 20), "Center (open) color")
+lineWidth   = input.int(1, "Line width", minval = 1, maxval = 4)
+// ============================================================================
+
+// -------- Wilder ATR with simple-average warm-up ----------------------------
+var float atr     = na
+var int   trCount = 0
+var float trSum   = 0.0
+prevAtr = atr                 // ATR through the PREVIOUS bar
+tr = ta.tr(true)              // high - low on the first bar
+if trCount < atrPeriod
+    trCount += 1
+    trSum   += tr
+    atr     := trSum / trCount
+else
+    atr := (atr * (atrPeriod - 1) + tr) / atrPeriod
+
+// -------- Ladder on the newest candle only ----------------------------------
+var array<line>  ladderLines  = array.new<line>()
+var array<label> ladderLabels = array.new<label>()
+
+if barstate.islast
+    for l in ladderLines
+        line.delete(l)
+    for lb in ladderLabels
+        label.delete(lb)
+    array.clear(ladderLines)
+    array.clear(ladderLabels)
+
+    spacing = na(prevAtr) ? atr : prevAtr
+    if spacing > 0
+        ext = extendLeft ? extend.both : extend.right
+        for k = -nLines to nLines
+            price = open + k * spacing
+            isCenter = k == 0
+            col = isCenter ? centerColor : levelColor
+            array.push(ladderLines, line.new(bar_index, price, bar_index + 1, price, extend = ext, color = col, width = lineWidth))
+            if showLabels
+                txt = isCenter ? "OPEN" : (k > 0 ? "+" : "") + str.tostring(k)
+                array.push(ladderLabels, label.new(bar_index + 2, price, txt, style = label.style_none, textcolor = col, size = size.small, textalign = text.align_left))

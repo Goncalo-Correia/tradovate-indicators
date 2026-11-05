@@ -1,5 +1,5 @@
 // ============================================================================
-// NY Session ATR Levels — Tradovate custom indicator
+// ATR Levels — Tradovate custom indicator
 // ----------------------------------------------------------------------------
 // Draws a ladder of horizontal levels anchored to the CURRENT candle:
 //   - The CENTER line sits at the OPEN of the newest (right-most) candle.
@@ -7,8 +7,8 @@
 //   - The whole ladder is re-drawn on the live candle as it updates, and
 //     RE-ANCHORS as soon as a new candle opens. Only one ladder ever exists:
 //     the previous candle's lines disappear when the new candle starts.
-//   - Levels are drawn only from NY open (09:30 ET) to NY close (16:00 ET)
-//     while SESSION_ONLY is true; set it to false to draw around the clock.
+//   - Not tied to any session: the ladder is drawn at all hours, on whatever
+//     the chart's newest candle is.
 //
 // The lines are `graphics` (infinite LineSegments) rather than `plots`, because
 // a plot holds one value per bar: an anchor that moves with every candle would
@@ -23,8 +23,7 @@
 //
 // Only depends on ./tools/predef, ./tools/meta and ./tools/graphics (all
 // provided by Tradovate). ATR is computed inline (Wilder's smoothing) so there
-// is no dependency on a tools module whose signature might differ. Timezone is
-// handled without Intl.
+// is no dependency on a tools module whose signature might differ.
 // ============================================================================
 
 const predef = require("./tools/predef");
@@ -33,10 +32,6 @@ const { du, px, op } = require("./tools/graphics");
 
 // ============================== CONFIG ======================================
 const LINES = 5;                      // number of lines above AND below center
-const SESSION_ONLY = true;            // true : only draw 09:30-16:00 ET
-                                      // false: draw on every bar, any time
-const SESSION_OPEN_MIN = 9 * 60 + 30; // 09:30 ET  (NY regular session open)
-const SESSION_CLOSE_MIN = 16 * 60;    // 16:00 ET  (NY regular session close)
 const EXTEND_LEFT = true;             // true : lines run across the whole chart
                                       // false: lines start at the current candle
                                       //        and only extend to the right
@@ -53,30 +48,7 @@ const LABEL_COLOR = "#EDEDED99";
 const CENTER_LABEL_COLOR = "#FFD54FCC";
 // ============================================================================
 
-// -------- US Eastern time (DST-aware, no Intl dependency) -------------------
-function nthSundayOfMonth(year, monthIndex, n) {
-    // Day-of-month of the n-th Sunday of the given month (monthIndex is 0-based)
-    const firstDow = new Date(Date.UTC(year, monthIndex, 1)).getUTCDay();
-    const firstSunday = 1 + ((7 - firstDow) % 7);
-    return firstSunday + (n - 1) * 7;
-}
-
-function easternOffsetHours(date) {
-    const y = date.getUTCFullYear();
-    // DST starts 2nd Sunday of March at 02:00 EST -> 07:00 UTC
-    const dstStart = Date.UTC(y, 2, nthSundayOfMonth(y, 2, 2), 7);
-    // DST ends 1st Sunday of November at 02:00 EDT -> 06:00 UTC
-    const dstEnd = Date.UTC(y, 10, nthSundayOfMonth(y, 10, 1), 6);
-    const t = date.getTime();
-    return (t >= dstStart && t < dstEnd) ? -4 : -5; // EDT vs EST
-}
-
-function easternMinutes(date) {
-    const shifted = new Date(date.getTime() + easternOffsetHours(date) * 3600000);
-    return shifted.getUTCHours() * 60 + shifted.getUTCMinutes();
-}
-
-class NySessionAtrLevels {
+class AtrLevels {
     init() {
         this.period = this.props.atrPeriod;
         this.atr = undefined;      // Wilder ATR through the bar just processed
@@ -150,13 +122,6 @@ class NySessionAtrLevels {
             return { graphics: false };
         }
 
-        if (SESSION_ONLY) {
-            const minutes = easternMinutes(d.timestamp());
-            if (minutes < SESSION_OPEN_MIN || minutes >= SESSION_CLOSE_MIN) {
-                return { graphics: false };
-            }
-        }
-
         const spacing = prevAtr !== undefined ? prevAtr : this.atr;
         if (!(spacing > 0)) {
             return { graphics: false };
@@ -205,9 +170,9 @@ class NySessionAtrLevels {
 }
 
 module.exports = {
-    name: "nySessionAtrLevels",
-    description: "NY Session ATR Levels",
-    calculator: NySessionAtrLevels,
+    name: "atrLevels",
+    description: "ATR Levels",
+    calculator: AtrLevels,
     params: {
         atrPeriod: predef.paramSpecs.period(14)
     },

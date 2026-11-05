@@ -1,0 +1,182 @@
+//@version=6
+// ============================================================================
+// MMC Market Magnet (PSR) — TradingView (Pine Script v6) port
+// ----------------------------------------------------------------------------
+// Port of indicators/marketMagnet.js (itself a port of the Million-Dollar-
+// Margin Club "Market Magnet PSR" ThinkorSwim indicator). Despite the
+// "magnetic force" marketing, it is a SESSION VOLUME PROFILE:
+//
+//   * Magnet (solid magenta line) = Point of Control (POC), the price level
+//     with the most traded volume in the session.
+//   * High Band (green dashed) = Value Area High (VAH) = top of the 50% zone.
+//   * Low  Band (red   dashed) = Value Area Low  (VAL) = bottom of the 50% zone.
+//
+// A profile is built inside each of three ET windows:
+//   * Asia   — first 2 hours of the Asia session   18:00-20:00 ET
+//   * London — first 2 hours of the London session 03:00-05:00 ET
+//   * NY     — the whole NY regular session         09:30-16:00 ET
+// Each window starts a FRESH profile, so the levels update as that window's
+// volume distribution evolves. Outside the windows the plots are na (lines
+// break). Asia/London need a chart that includes extended hours.
+//
+// Rendering (all toggleable in the settings):
+//   * magnet / VAH / VAL as plotted lines (magenta solid, green/red dashed);
+//   * a row of green down-arrows on the VAH and red up-arrows on the VAL;
+//   * the volume profile itself as full-width, translucent light-blue horizontal
+//     lines whose thickness/opacity scale with volume (drawn on the last bar);
+//   * MAGNET / VAH text labels at the last bar.
+//
+// Data source: Tradovate's d.profile() gives true per-bar volume-by-price. Pine
+// has no free equivalent, so by default the profile is built from LOWER-
+// TIMEFRAME intrabars (request.security_lower_tf): each intrabar's volume is
+// placed at its typical price. Where intrabars are unavailable (older history,
+// or chart timeframe <= the chosen lower timeframe) it falls back to the chart
+// bar's typical price with its volume — the same fallback the Tradovate
+// version uses when a bar has no profile.
+// ============================================================================
+indicator("MMC Market Magnet (PSR)", shorttitle = "MMC Magnet", overlay = true, max_lines_count = 500, max_labels_count = 10)
+
+// ============================== CONFIG ======================================
+valueAreaPct   = input.int(50, "Value Area %", minval = 1, maxval = 100)
+asiaWin        = input.session("1800-2000", "Asia window (ET, first 2h)", group = "Windows")
+londonWin      = input.session("0300-0500", "London window (ET, first 2h)", group = "Windows")
+nyWin          = input.session("0930-1600", "NY window (ET, whole session)", group = "Windows")
+useLtf         = input.bool(true, "Build profile from lower timeframe", group = "Data")
+ltfInput       = input.timeframe("1", "Lower timeframe", group = "Data")
+rowTicks       = input.int(1, "Profile row size (ticks)", minval = 1, group = "Data")
+
+showLabels     = input.bool(true, "Show MAGNET / VAH labels", group = "Display")
+showArrows     = input.bool(true, "Show VAH / VAL arrow rows", group = "Display")
+arrowEvery     = input.int(1, "Arrow every N bars", minval = 1, group = "Display")
+showProfile    = input.bool(true, "Show volume profile bars", group = "Display")
+profileColor   = input.color(#38bdf8, "Profile color", group = "Display")
+profileMinFrac = input.float(0.2, "Skip levels below fraction of POC volume", minval = 0, maxval = 1, step = 0.05, group = "Display")
+profileMaxW    = input.int(12, "Profile bar width at POC (px)", minval = 1, group = "Display")
+
+MAGENTA = #e83fd8
+GREEN   = #22c55e
+RED     = #ef4444
+
+TZ           = "America/New_York"
+MAX_PROFILE  = 490 // stay under max_lines_count
+// ============================================================================
+
+rowSize = syminfo.mintick * rowTicks
+
+// -------- Window detection --------------------------------------------------
+inWin(string s) => not na(time(timeframe.period, s, TZ))
+winId     = inWin(nyWin) ? 3 : inWin(londonWin) ? 2 : inWin(asiaWin) ? 1 : 0
+winName   = winId == 3 ? "NY" : winId == 2 ? "LONDON" : "ASIA"
+inSession = winId > 0
+dayKey    = year(time, TZ) * 10000 + month(time, TZ) * 100 + dayofmonth(time, TZ)
+
+// -------- Window volume profile: row key (integer rows) -> volume -----------
+var map<int, float> levels    = map.new<int, float>()
+var int             activeKey = na
+
+// First bar of a new window (or the same window on a new day) -> fresh profile.
+winKey = dayKey * 10 + winId
+if inSession and (na(activeKey) or winKey != activeKey)
+    activeKey := winKey
+    levels.clear()
+
+addLevel(map<int, float> m, float price, float vol) =>
+    if vol > 0
+        key = int(math.round(price / rowSize))
+        m.put(key, nz(m.get(key)) + vol)
+
+ltf = useLtf and timeframe.in_seconds(ltfInput) < timeframe.in_seconds() ? ltfInput : timeframe.period
+[ltfTp, ltfVol] = request.security_lower_tf(syminfo.tickerid, ltf, [hlc3, volume])
+
+if inSession
+    n = ltfTp.size()
+    if useLtf and n > 0
+        for i = 0 to n - 1
+            addLevel(levels, ltfTp.get(i), ltfVol.get(i))
+    else
+        // Fallback: approximate with the chart bar's typical price.
+        addLevel(levels, hlc3, volume)
+
+// Standard volume-profile value area: expand out from the POC, adding the
+// larger neighbour each step, until `pct` of total volume is covered.
+valueArea(map<int, float> m, float pct, bool active) =>
+    float poc = na
+    float vah = na
+    float val = na
+    keys = m.keys()
+    n = keys.size()
+    if active and n > 0
+        keys.sort(order.ascending)
+        vols   = array.new<float>(n, 0.0)
+        total  = 0.0
+        pocIdx = 0
+        for i = 0 to n - 1
+            v = m.get(keys.get(i))
+            vols.set(i, v)
+            total += v
+            if v > vols.get(pocIdx)
+                pocIdx := i
+        target = total * pct
+        accum  = vols.get(pocIdx)
+        lo     = pocIdx
+        hi     = pocIdx
+        while accum < target and (lo > 0 or hi < n - 1)
+            volAbove = hi < n - 1 ? vols.get(hi + 1) : -1.0
+            volBelow = lo > 0 ? vols.get(lo - 1) : -1.0
+            if volAbove >= volBelow
+                accum += volAbove
+                hi    += 1
+            else
+                accum += volBelow
+                lo    -= 1
+        poc := keys.get(pocIdx) * rowSize
+        vah := keys.get(hi) * rowSize
+        val := keys.get(lo) * rowSize
+    [poc, vah, val]
+
+[magnet, vah, val] = valueArea(levels, valueAreaPct / 100.0, inSession)
+
+plot(magnet, "Magnet (POC)",    MAGENTA, 2, plot.style_linebr)
+plot(vah,    "High Band (VAH)", GREEN,   1, plot.style_linebr, linestyle = plot.linestyle_dashed)
+plot(val,    "Low Band (VAL)",  RED,     1, plot.style_linebr, linestyle = plot.linestyle_dashed)
+
+// Arrow rows: green ▼ on the VAH ("Peak Zone"), red ▲ on the VAL ("Trough Zone").
+arrowBar = showArrows and bar_index % arrowEvery == 0
+plotshape(arrowBar ? vah : na, "VAH Arrow", shape.triangledown, location.absolute, color.new(GREEN, 10), size = size.tiny)
+plotshape(arrowBar ? val : na, "VAL Arrow", shape.triangleup,   location.absolute, color.new(RED, 10),   size = size.tiny)
+
+// -------- Drawn once, on the most recent bar --------------------------------
+var array<line> profileLines = array.new<line>()
+var label       magLabel     = na
+var label       vahLabel     = na
+
+if barstate.islast
+    for l in profileLines
+        l.delete()
+    profileLines.clear()
+    label.delete(magLabel)
+    label.delete(vahLabel)
+
+    // The session volume profile as full-width, translucent light-blue lines.
+    // Thickness and opacity scale with each level's volume relative to the POC.
+    if showProfile and inSession and levels.size() > 0
+        keys = levels.keys()
+        vals = levels.values()
+        maxVol = vals.max()
+        if maxVol > 0
+            for i = 0 to keys.size() - 1
+                if profileLines.size() >= MAX_PROFILE
+                    break
+                frac = vals.get(i) / maxVol
+                if frac >= profileMinFrac
+                    width   = math.max(1, int(math.round(frac * profileMaxW)))
+                    opacity = math.min(0.6, 0.12 + frac * 0.5)
+                    price   = keys.get(i) * rowSize
+                    profileLines.push(line.new(bar_index - 1, price, bar_index, price, extend = extend.both,
+                         color = color.new(profileColor, 100 * (1 - opacity)), width = width))
+
+    if showLabels and not na(magnet)
+        magLabel := label.new(bar_index, magnet, winName + " MAGNET (POC)", style = label.style_label_left,
+             color = color.new(color.black, 100), textcolor = MAGENTA, size = size.small, text_formatting = text.format_bold)
+        vahLabel := label.new(bar_index, vah, winName + " VAH " + str.tostring(valueAreaPct) + "%", style = label.style_label_left,
+             color = color.new(color.black, 100), textcolor = GREEN, size = size.small, text_formatting = text.format_bold)

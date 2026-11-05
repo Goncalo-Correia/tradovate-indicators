@@ -10,7 +10,7 @@ indicator dropdown rather than being scattered among the built-in categories.
 |---|---|
 | [`indicators/scalpProMeter.js`](indicators/scalpProMeter.js) | Scalp-Pro Meter (PSR) |
 | [`indicators/marketMagnet.js`](indicators/marketMagnet.js) | MMC Market Magnet (PSR) |
-| [`indicators/nySessionAtrLevels.js`](indicators/nySessionAtrLevels.js) | NY Session ATR Levels |
+| [`indicators/atrLevels.js`](indicators/atrLevels.js) | ATR Levels |
 | [`indicators/sessionRangeLevels.js`](indicators/sessionRangeLevels.js) | Session Range Levels |
 | [`indicators/sessionCountdown.js`](indicators/sessionCountdown.js) | Session Countdown (Asia / London / NY) |
 
@@ -111,9 +111,10 @@ The `require("./tools/...")` calls resolve against Tradovate's bundled SDK modul
 (`predef`, `meta`, `EMA`, `graphics`) — the same modules the official examples use — so
 no local dependencies are needed inside the platform.
 
-## NY Session ATR Levels
+## ATR Levels
 
-[`indicators/nySessionAtrLevels.js`](indicators/nySessionAtrLevels.js)
+[`indicators/atrLevels.js`](indicators/atrLevels.js) ·
+TradingView: [`trading-view/atrLevels.pine`](trading-view/atrLevels.pine)
 
 Draws a fan of horizontal ATR-spaced levels anchored to the **current (right-most)
 candle**, useful for gauging how far price could travel from where this candle opened in
@@ -129,8 +130,7 @@ ATR terms. The ladder re-anchors on every new candle.
 - **Exactly one ladder exists at a time.** It updates on the live candle and re-anchors
   the moment a new candle opens — the previous candle's lines are removed, so the chart
   never accumulates old ladders.
-- Levels are drawn **only during the NY regular session** (09:30–16:00 ET); set
-  `SESSION_ONLY = false` to draw around the clock.
+- **Not tied to any session** — the ladder is drawn at all hours on the newest candle.
 
 Spacing uses the ATR through the **previous closed bar**, so the ladder stays perfectly
 still while the live candle forms and only jumps at the next open.
@@ -141,16 +141,12 @@ still while the live candle forms and only jumps at the next open.
 |---|---|---|
 | `atrPeriod` | 14 | ATR period (Wilder's smoothing, computed inline) |
 
-The line count, session hours, line extension, labels and colours are top-of-file
-constants (`LINES`, `SESSION_ONLY`, `SESSION_OPEN_MIN`, `SESSION_CLOSE_MIN`,
+The line count, line extension, labels and colours are top-of-file constants (`LINES`,
 `EXTEND_LEFT`, `SHOW_LABELS`, `LABEL_EVERY`, `LEVEL_COLOR`, `CENTER_COLOR`) rather than
 UI parameters — edit them in the code before pasting.
 
 ### Notes / limitations
 
-- **Timezone** is handled without `Intl`: US Eastern offset is derived from hand-rolled
-  DST rules (2nd Sunday of March → 1st Sunday of November), so it is correct for US
-  Eastern trading but not parameterized for other zones.
 - **ATR** is computed inline with a simple-average warm-up until `atrPeriod` samples are
   seen, then Wilder's smoothing — no dependency on a `tools/` ATR module.
 - **Lines are `graphics`, not `plots`.** A plot holds one value per bar, so an anchor
@@ -166,12 +162,15 @@ UI parameters — edit them in the code before pasting.
 
 1. In Tradovate, open **Chart → Indicators → the code editor (Code Explorer)**.
 2. Create a new indicator and paste the contents of
-   [`indicators/nySessionAtrLevels.js`](indicators/nySessionAtrLevels.js).
-3. Save, then add **"NY Session ATR Levels"** to a chart (it overlays on the price pane).
+   [`indicators/atrLevels.js`](indicators/atrLevels.js).
+3. Save, then add **"ATR Levels"** to a chart (it overlays on the price pane).
+   If you had the old **"NY Session ATR Levels"** installed, remove it — it is a
+   separate indicator in Tradovate and will not update itself.
 
 ## MMC Market Magnet (PSR)
 
-[`indicators/marketMagnet.js`](indicators/marketMagnet.js)
+[`indicators/marketMagnet.js`](indicators/marketMagnet.js) ·
+TradingView: [`trading-view/marketMagnet.pine`](trading-view/marketMagnet.pine)
 
 A port of the *Million-Dollar-Margin Club* **"Market Magnet / Market Magnet PSR"**
 ThinkorSwim indicator. Despite the "magnetic force" marketing, it is a **session
@@ -191,18 +190,27 @@ volume profile** — their own published formulas confirm it.
 
 ### How it works
 
-The volume-by-price profile is accumulated across the **NY regular session
-(09:30–16:00 ET)** using `d.profile()` (per-bar volume-by-price levels), keyed by
-tick. On each candle it recomputes:
+A volume-by-price profile is built inside each of three **ET windows**, using
+`d.profile()` (per-bar volume-by-price levels), keyed by tick:
+
+| Window | Hours (ET) |
+|---|---|
+| Asia — first 2 hours | 18:00 → 20:00 |
+| London — first 2 hours | 03:00 → 05:00 |
+| NY — whole regular session | 09:30 → 16:00 |
+
+Each window starts a **fresh profile**; the session starts match Session Range
+Levels and Session Countdown. On each candle inside a window it recomputes:
 
 1. **POC** — the price level with the highest accumulated volume ("the magnet").
 2. **Value area** — starting at the POC, expand outward adding the larger-volume
    neighbor each step until 50% of total session volume is covered; the top and
    bottom of that band are **VAH** and **VAL**.
 
-The three levels update in real time as the day's distribution evolves and
-re-anchor each session. Outside the session the plots return nothing (the lines
-break), and the profile resets at the next NY open.
+The three levels update in real time as the window's distribution evolves.
+Outside the windows the plots return nothing (the lines break), and the profile
+resets at the start of the next window. Labels name the active window
+(`NY MAGNET (POC)`, `LONDON VAH 50%`, …).
 
 ### Parameters
 
@@ -210,8 +218,8 @@ break), and the profile resets at the next NY open.
 |---|---|---|
 | `valueAreaPct` | 50 | Percentage of session volume the value area (VAH/VAL band) must cover |
 
-Session hours and the visual toggles are top-of-file constants: `SESSION_OPEN_MIN`,
-`SESSION_CLOSE_MIN`, `SHOW_LABELS`, `SHOW_ARROWS` / `ARROW_EVERY` (arrow-row density),
+The windows and the visual toggles are top-of-file constants: `WINDOWS` (ET
+minutes-of-day; a window may not cross midnight), `SHOW_LABELS`, `SHOW_ARROWS` / `ARROW_EVERY` (arrow-row density),
 and `SHOW_PROFILE` / `PROFILE_COLOR` / `PROFILE_MIN_FRAC` / `PROFILE_MAX_WIDTH_PX`
 (the light-blue volume bars).
 
@@ -221,12 +229,13 @@ and `SHOW_PROFILE` / `PROFILE_COLOR` / `PROFILE_MIN_FRAC` / `PROFILE_MAX_WIDTH_P
   requested with volume histograms. If a bar has no profile, the port falls back
   to a single level at the bar's typical price × volume — coarser, but it still
   runs. For a true profile, enable the volume-profile/histogram option on the chart.
+- **Asia and London need extended hours.** On an RTH-only session template those
+  bars don't exist, so only the NY window draws.
 - **Marketing vs. math discrepancy:** the product page prose calls the bands the
   session's highest/lowest price *reached*, but its formulas define them as the
   50%-value-area edges. This port follows the formulas (the value area), which is
   the standard, useful interpretation.
-- **Timezone** is handled without `Intl` (hand-rolled US-Eastern DST), same as
-  `nySessionAtrLevels.js`.
+- **Timezone** is handled without `Intl` (hand-rolled US-Eastern DST).
 
 ### Install
 
@@ -305,11 +314,11 @@ parameters — edit them in the code before pasting.
   trading day of the loaded history they may reflect a US session truncated by where
   the chart data begins.
 - By default every known level stays drawn all day. Set `DRAW_ONLY_IN_RTH = true` to
-  hide them outside 09:30–16:00 ET, matching `nySessionAtrLevels.js`.
+  hide them outside 09:30–16:00 ET.
 - Label colours follow the dark scheme (graphics items cannot see the active scheme);
   the plot lines themselves have proper light/dark styles.
 - **Timezone** is handled without `Intl` (hand-rolled US-Eastern DST), same as
-  `nySessionAtrLevels.js`.
+  `marketMagnet.js`.
 
 ### Install
 
