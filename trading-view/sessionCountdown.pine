@@ -1,0 +1,92 @@
+//@version=6
+// ============================================================================
+// Session Countdown — TradingView (Pine Script v6) port
+// ----------------------------------------------------------------------------
+// Port of indicators/sessionCountdown.js.
+//
+// Shows a small table in the BOTTOM-LEFT of the chart with, for each major
+// session (Asia, London, New York), either:
+//   - "OPEN"            (green) while that session is trading, or
+//   - the time left until it next opens, e.g. "3h 12m" or "1d 4h 05m".
+//
+// Each session is defined in its own local time zone (DST handled natively):
+//   - Asia   : Tokyo    09:00–18:00  ("Asia/Tokyo")
+//   - London : London   08:00–16:30  ("Europe/London")
+//   - NY     : New York 09:30–16:00  ("America/New_York")
+// Sessions only open Monday–Friday in their local time, so on a weekend the
+// countdown runs to Monday's open. Exchange holidays are NOT accounted for.
+//
+// Timing: uses the wall clock (timenow) on the last bar, so it refreshes on
+// each realtime tick. Turn off "Use wall clock" to base it on the last bar's
+// time instead (useful in Bar Replay).
+// ============================================================================
+indicator("Session Countdown", shorttitle = "Sessions", overlay = true)
+
+// ============================== CONFIG ======================================
+asiaSess   = input.session("0900-1800", "Asia session (Tokyo time)")
+londonSess = input.session("0800-1630", "London session (London time)")
+nySess     = input.session("0930-1600", "NY session (New York time)")
+useWall    = input.bool(true, "Use wall clock", tooltip = "Off: use the last bar's time (Bar Replay).")
+labelColor = input.color(#9ca3af, "Label color")
+waitColor  = input.color(#e5e7eb, "Countdown color")
+openColor  = input.color(#22c55e, "OPEN color")
+// ============================================================================
+
+// "HHMM-HHMM" -> minutes of day
+sessOpenMin(s)  => int(str.tonumber(str.substring(s, 0, 2))) * 60 + int(str.tonumber(str.substring(s, 2, 4)))
+sessCloseMin(s) => int(str.tonumber(str.substring(s, 5, 7))) * 60 + int(str.tonumber(str.substring(s, 7, 9)))
+
+isWeekday(t, tz) =>
+    wd = dayofweek(t, tz)
+    wd != dayofweek.saturday and wd != dayofweek.sunday
+
+// Returns [isOpen, msUntilNextOpen]
+sessionState(string sess, string tz, int now) =>
+    oMin = sessOpenMin(sess)
+    cMin = sessCloseMin(sess)
+    y  = year(now, tz)
+    mo = month(now, tz)
+    dd = dayofmonth(now, tz)
+    oH = int(math.floor(oMin / 60))
+    cH = int(math.floor(cMin / 60))
+    todayOpen  = timestamp(tz, y, mo, dd, oH, oMin % 60)
+    todayClose = timestamp(tz, y, mo, dd, cH, cMin % 60)
+    isOpen = isWeekday(now, tz) and now >= todayOpen and now < todayClose
+    float msUntil = na
+    if not isOpen
+        // timestamp() normalizes day overflow (e.g. Jan 32 -> Feb 1)
+        for k = 0 to 7
+            t = timestamp(tz, y, mo, dd + k, oH, oMin % 60)
+            if isWeekday(t, tz) and t > now
+                msUntil := t - now
+                break
+    [isOpen, msUntil]
+
+pad2(int n) => n < 10 ? "0" + str.tostring(n) : str.tostring(n)
+
+formatCountdown(float ms) =>
+    if na(ms)
+        "--"
+    else
+        totalMin = int(math.ceil(ms / 60000))
+        days  = int(math.floor(totalMin / 1440))
+        hours = int(math.floor((totalMin % 1440) / 60))
+        mins  = totalMin % 60
+        days > 0 ? str.format("{0}d {1}h {2}m", days, hours, pad2(mins)) :
+         hours > 0 ? str.format("{0}h {1}m", hours, pad2(mins)) :
+         str.format("{0}m", mins)
+
+var table hud = table.new(position.bottom_left, 2, 3)
+
+setRow(int row, string name, bool isOpen, float msUntil) =>
+    table.cell(hud, 0, row, name, text_color = labelColor, text_halign = text.align_left, text_size = size.normal)
+    table.cell(hud, 1, row, isOpen ? "OPEN" : formatCountdown(msUntil), text_color = isOpen ? openColor : waitColor, text_halign = text.align_left, text_size = size.normal)
+
+if barstate.islast
+    now = useWall ? timenow : time
+    [aOpen, aMs] = sessionState(asiaSess, "Asia/Tokyo", now)
+    [lOpen, lMs] = sessionState(londonSess, "Europe/London", now)
+    [nOpen, nMs] = sessionState(nySess, "America/New_York", now)
+    setRow(0, "ASIA",   aOpen, aMs)
+    setRow(1, "LONDON", lOpen, lMs)
+    setRow(2, "NY",     nOpen, nMs)

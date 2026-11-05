@@ -12,6 +12,7 @@ indicator dropdown rather than being scattered among the built-in categories.
 | [`indicators/marketMagnet.js`](indicators/marketMagnet.js) | MMC Market Magnet (PSR) |
 | [`indicators/nySessionAtrLevels.js`](indicators/nySessionAtrLevels.js) | NY Session ATR Levels |
 | [`indicators/sessionRangeLevels.js`](indicators/sessionRangeLevels.js) | Session Range Levels |
+| [`indicators/sessionCountdown.js`](indicators/sessionCountdown.js) | Session Countdown (Asia / London / NY) |
 
 ## Scalp-Pro Meter (PSR)
 
@@ -317,3 +318,45 @@ parameters — edit them in the code before pasting.
    [`indicators/sessionRangeLevels.js`](indicators/sessionRangeLevels.js).
 3. Save, then add **"Session Range Levels"** to a chart (it overlays on the price pane).
    Use an intraday chart with an **ETH** session template.
+
+## Session Countdown
+
+[`indicators/sessionCountdown.js`](indicators/sessionCountdown.js) ·
+TradingView: [`trading-view/sessionCountdown.pine`](trading-view/sessionCountdown.pine)
+
+A small readout pinned to the **bottom-left** of the price chart with one row per
+session — Asia, London and New York. Each row shows **OPEN** (green) while that
+session is trading, otherwise the time left until it next opens (`3h 12m`,
+`1d 4h 05m`).
+
+### Sessions
+
+| Session | Hours (local time) | Time zone / DST |
+|---|---|---|
+| Asia | 09:00–18:00 Tokyo | UTC+9, no DST |
+| London | 08:00–16:30 London | GMT/BST (last Sun Mar → last Sun Oct) |
+| NY | 09:30–16:00 New York | EST/EDT (2nd Sun Mar → 1st Sun Nov) |
+
+Hours, labels, colors and HUD placement are top-of-file constants (`SESSIONS`,
+`MARGIN_*`, `*_COLOR`) — edit them before pasting. Each session uses its own DST
+rules, so the gap between the UK and US switch dates is handled.
+
+### Notes / limitations
+
+- Sessions open **Monday–Friday** in their local time; on a weekend the countdown
+  runs to Monday's open. **Exchange holidays are not accounted for.**
+- The countdown uses the wall clock (`Date.now()`) on the live bar, so it refreshes
+  whenever Tradovate re-runs `map()` on incoming ticks; in a very quiet market it
+  can lag until the next tick. Set `USE_WALL_CLOCK = false` to use the last bar's
+  timestamp instead (for Replay).
+- These Asia/London hours are the **forex** sessions in Tokyo/London local time,
+  not the ET windows used by Session Range Levels (Asia 18:00–03:00, London
+  03:00–09:30 ET).
+
+### Install
+
+1. In Tradovate, open **Chart → Indicators → the code editor (Code Explorer)**.
+2. Create a new indicator and paste the contents of
+   [`indicators/sessionCountdown.js`](indicators/sessionCountdown.js).
+3. Save, then add **"Session Countdown (Asia / London / NY)"** to a chart (it
+   overlays on the price pane). It is listed under **Custom Indicators**.
