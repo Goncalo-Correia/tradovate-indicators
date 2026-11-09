@@ -1,0 +1,101 @@
+//@version=6
+// ============================================================================
+// MMC Scalp-Pro Meter (PSR) — TradingView (Pine Script v6) port
+// ----------------------------------------------------------------------------
+// Port of indicators/mmcScalpProMeter.js (itself a port of the ThinkorSwim
+// "Scalp Pro Meter PSR" by the Million-Dollar-Margin Club).
+//
+// Renders in its own pane and shows, for each candle:
+//   * a blue volume histogram (total volume of the candle)
+//   * a green dot at estimated BUY volume and a red dot at estimated SELL volume
+//     (positioned by where the close sits inside the candle's range)
+//   * a fixed on-screen HUD (top-left of the pane) built from the *last* candle:
+//       - a strength meter (default 10 boxes) split green(buy)/red(sell)
+//       - a BUY%/SELL% label, colored green / red / yellow (balanced)
+//       - an EMA-vs-VWAP trend label that only shows during active directional moves
+//       - a volume label that turns cyan when the current candle's volume
+//         exceeds the previous candle's (a volume spike)
+//
+// NOTE ON THE BUY/SELL SPLIT: like the original, this is an *estimate* derived
+// from where price closed within the candle's range. It is NOT true order-flow /
+// bid-ask delta.
+//
+// NOTE ON VWAP: the Tradovate version builds VWAP from d.profile() levels when
+// available; Pine has no per-bar volume-by-price here, so this uses the
+// built-in session VWAP of hlc3 (the same as the Tradovate fallback path).
+//
+// NOTE ON ALERTS: unlike Tradovate, Pine supports alerts, so the original's
+// audio "dings" are exposed as alertconditions (volume spike, trend start).
+// Set them up via the chart's "Create Alert" dialog.
+// ============================================================================
+indicator("MMC Scalp-Pro Meter (PSR)", shorttitle = "MMC Scalp-Pro", overlay = false, format = format.volume)
+
+// ============================== CONFIG ======================================
+emaPeriod        = input.int(14, "EMA Period", minval = 1)
+meterBoxes       = input.int(10, "Meter Boxes", minval = 2, maxval = 30)
+balanceThreshold = input.int(6, "Balanced Threshold (%)", minval = 0, tooltip = "BUY% within this many points of 50% shows as yellow (balanced)")
+
+GREEN  = #22c55e
+RED    = #ef4444
+YELLOW = #eab308
+CYAN   = #22d3ee
+GREY   = #9ca3af
+BLUE   = #3b82f6
+// ============================================================================
+
+vol = nz(volume)
+
+// --- estimated buyer / seller split from close position in range ---
+rng        = high - low
+buyFrac    = rng > 0 ? (close - low) / rng : 0.5
+sellFrac   = 1 - buyFrac
+buyVolume  = vol * buyFrac
+sellVolume = vol * sellFrac
+buyPct     = int(math.round(buyFrac * 100))
+sellPct    = 100 - buyPct
+
+// --- trend: EMA vs session VWAP, with slope-based "active move" gate ---
+emaValue      = ta.ema(close, emaPeriod)
+vwapValue     = ta.vwap(hlc3)
+slope         = nz(emaValue - emaValue[1])
+bullishActive = emaValue > vwapValue and slope > 0
+bearishActive = emaValue < vwapValue and slope < 0
+
+// --- volume spike vs previous candle ---
+prevVolume  = nz(volume[1], vol)
+volumeSpike = vol > prevVolume
+
+plot(vol,        "Volume",      BLUE,  1, plot.style_columns)
+plot(buyVolume,  "Buy Volume",  GREEN, 3, plot.style_circles)
+plot(sellVolume, "Sell Volume", RED,   3, plot.style_circles)
+plot(emaValue,   "EMA",  display = display.data_window)
+plot(vwapValue,  "VWAP", display = display.data_window)
+
+// --- fixed HUD: row 0 = meter boxes, rows 1..3 = merged text rows ---
+var table hud = table.new(position.top_left, meterBoxes, 4, border_width = 2)
+if barstate.isfirst
+    for r = 1 to 3
+        table.merge_cells(hud, 0, r, meterBoxes - 1, r)
+
+if barstate.islast
+    greenBoxes = math.max(0, math.min(meterBoxes, int(math.round(buyFrac * meterBoxes))))
+    for i = 0 to meterBoxes - 1
+        c = i < greenBoxes ? GREEN : RED
+        // a "■" in the cell's own color makes a solid box sized by the font
+        table.cell(hud, i, 0, "■", text_color = c, bgcolor = c, text_size = size.small)
+
+    balanced     = math.abs(buyPct - 50) <= balanceThreshold
+    buySellColor = balanced ? YELLOW : (buyPct > sellPct ? GREEN : RED)
+    table.cell(hud, 0, 1, str.format("BUY {0}%   SELL {1}%", buyPct, sellPct),
+         text_color = buySellColor, text_halign = text.align_left, text_size = size.normal, text_formatting = text.format_bold)
+
+    trendTxt = bullishActive ? "TREND ▲  EMA > VWAP" : bearishActive ? "TREND ▼  EMA < VWAP" : ""
+    table.cell(hud, 0, 2, trendTxt, text_color = bullishActive ? GREEN : RED, text_halign = text.align_left, text_size = size.small)
+
+    volTxt = "VOL " + str.tostring(vol, "#,##0") + (volumeSpike ? " ▲" : "") + " (prev " + str.tostring(prevVolume, "#,##0") + ")"
+    table.cell(hud, 0, 3, volTxt, text_color = volumeSpike ? CYAN : GREY, text_halign = text.align_left, text_size = size.small)
+
+// --- alerts (replace the original's audio dings) ---
+alertcondition(volumeSpike, "Volume spike", "MMC Scalp-Pro: volume spike (volume > previous candle)")
+alertcondition(bullishActive and not bullishActive[1], "Bullish trend start", "MMC Scalp-Pro: TREND ▲ EMA > VWAP")
+alertcondition(bearishActive and not bearishActive[1], "Bearish trend start", "MMC Scalp-Pro: TREND ▼ EMA < VWAP")
