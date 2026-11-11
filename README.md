@@ -13,7 +13,6 @@ indicator dropdown rather than being scattered among the built-in categories.
 | [`indicators/atrLevels.js`](indicators/atrLevels.js) | ATR Levels |
 | [`indicators/sessionRangeLevels.js`](indicators/sessionRangeLevels.js) | Session Range Levels |
 | [`indicators/sessionCountdown.js`](indicators/sessionCountdown.js) | Session Countdown (Asia / London / NY) |
-| [`indicators/signal.js`](indicators/signal.js) | Signal (5m + 1m Scalp-Pro trend) |
 | [`indicators/bigTrades.js`](indicators/bigTrades.js) | Big Trades (bubbles) + Tape Speed |
 
 ## Scalp-Pro Meter (PSR)
@@ -372,120 +371,6 @@ Tokyo or London local time via its `tz` field (e.g. the forex Asia session:
 2. Create a new indicator and paste the contents of
    [`indicators/sessionCountdown.js`](indicators/sessionCountdown.js).
 3. Save, then add **"Session Countdown (Asia / London / NY)"** to a chart (it
-   overlays on the price pane). It is listed under **Custom Indicators**.
-
-## Signal
-
-[`indicators/signal.js`](indicators/signal.js) · Tradovate only (no TradingView port)
-
-Marks **buy** entries with a green **B** below the candle and **sell** entries with a red
-**S** above the candle when the Scalp-Pro trend lines up. The trend uses
-the Scalp-Pro Meter rule: **bullish** = EMA(14) above session VWAP and rising,
-**bearish** = EMA(14) below session VWAP and falling.
-
-Works on three kinds of chart; the indicator detects which one it is on:
-
-| Chart | Mode | Candles used |
-|---|---|---|
-| **1-minute** | 5m + 1m | each bar is a 1-min candle; 5-min candles are built from them |
-| **Tick / range** (e.g. 22-tick range) | 5m + 1m | bars are grouped by the minute they opened in to build 1-min candles, then 5-min candles |
-| **5-minute** | 5m only | the chart's own bars (no 1-min data exists on this chart) |
-
-On any other timeframe (2-min, 15-min, …) the HUD shows a warning and no signals are drawn.
-
-5-min trends always use the full rule. By default the **entry** candle's trend
-(the 1-min candle in steps 2 and 4 below, or the 5-min candle itself on a 5-min chart)
-only checks EMA vs VWAP and ignores whether the EMA is rising
-or falling. Turn `requireSlope` on to use the full rule there too. Requiring
-the slope makes signals about 20× rarer: 1.1 vs 22.2 per 1,000 bars in a
-random-walk test. A rising EMA needs the close above it, and a dip to the range
-bottom almost never has that.
-
-### Signal rule — 1-min and tick / range charts
-
-A **BUY** fires on the first 1-min candle of a new 5-min candle when:
-
-1. the 5-min candle that just closed was bullish,
-2. the 1-min candle that closed with it was bullish,
-3. the new (forming) 5-min candle is bullish, using the current 1-min close as its
-   provisional close (`requireLive5m`),
-4. that first 1-min candle closes bullish (trend),
-5. and that 1-min candle's **low** reached the **bottom** of the recent range: the
-   lowest `zonePct`% (30%) of the high–low of the last `rangeBars` (20) 1-min candles,
-   this one included. In other words, price dipped to the range bottom and the
-   trend held.
-
-**SELL** is the mirror image with bearish trends, and its 1-min candle's **high**
-must reach the **top** of the range. At most one buy and one sell per 5-min candle.
-
-On a range chart the B / S is drawn on the range bar that made that 1-min candle's
-low (B) or high (S).
-
-### Signal rule — 5-minute chart
-
-A **BUY** fires on a 5-min candle when:
-
-1. the previous 5-min candle closed bullish (full rule),
-2. this 5-min candle closes bullish,
-3. and its **low** reached the bottom `zonePct`% of the last `rangeBars` 5-min candles.
-
-**SELL** is the mirror. `requireLive5m` and `allowLaterEntry` do not apply here.
-
-### Range zone and HUD
-
-The zone is measured with the candle's wick, not its close, so a candle that dips
-to the range bottom and closes back up still counts. With `requireSlope` on, this
-is what keeps signals possible at all: in a random-walk test only 6 of 7,866
-bullish 1-min bars *closed* in the bottom zone, while 645 wicked into it.
-
-A small HUD in the top-left has five rows:
-
-| Row | Shows |
-|---|---|
-| `5m closed` | trend of the last closed 5-min candle (`BULL` / `BEAR` / `none`) |
-| `5m live` | trend of the forming 5-min candle |
-| `1m closed` | trend of the last closed 1-min candle (`n/a` on a 5-min chart) |
-| `range` | where the last closed candle's close sits in the recent range, e.g. `range 23% (bottom)` |
-| `LAST` | how many chart bars ago the last signal fired, or `LAST none yet` |
-
-### Parameters
-
-| Param | Default | Meaning |
-|---|---|---|
-| `emaPeriod` | 14 | EMA length (both timeframes) |
-| `rangeBars` | 20 | Candles that make up the recent range (1-min candles; 5-min candles on a 5-min chart) |
-| `zonePct` | 30 | Size of the bottom / top zone, in % of the range. Raise it (40–50) for more signals |
-| `requireSlope` | off | The entry candle's trend also needs a rising (B) / falling (S) EMA, as in Scalp-Pro. About 20× fewer signals |
-| `showBuy` / `showSell` | on | Enable each side |
-| `requireLive5m` | on | Step 3: the forming 5-min candle must agree too (1-min / range charts) |
-| `allowLaterEntry` | off | If the first 1-min candle fails, let a later 1-min candle in the same 5-min candle trigger (1-min / range charts) |
-| `showHud` | on | Show the HUD |
-
-### Notes / limitations
-
-- Tradovate gives a custom indicator only its chart's bars, so the 1-min and 5-min
-  candles are built from them. That is why a 5-min chart can't use the 1-min steps.
-- Chart detection: on a time chart every gap between bars is a multiple of the bar
-  period, so the greatest common divisor of the gaps is exactly 1 or 5 min. Tick /
-  range bars arrive at irregular times, so their divisor is 1 min or less, even if
-  Tradovate rounds their timestamps. Any bar not opening on a whole minute also
-  marks a tick / range chart. On an unsupported chart the warning shows the
-  detected spacing (e.g. `(bars are 120s apart)`).
-- On a range chart each bar counts toward the minute it **opened** in; a bar that
-  spans a minute boundary adds its whole range and close to the earlier minute.
-- Signals are decided only after the candle **closes**, i.e. when the first bar of
-  the next minute (or the next 5-min bar) appears. On a range chart that can be a
-  little after the minute ends. The B / S never repaints.
-- The EMA is seeded with the first close, so the first ~30 bars of history may
-  differ slightly from Scalp-Pro's EMA.
-- No sound alerts.
-
-### Install
-
-1. In Tradovate, open **Chart → Indicators → the code editor (Code Explorer)**.
-2. Create a new indicator and paste the contents of
-   [`indicators/signal.js`](indicators/signal.js).
-3. Save, then add **"Signal (5m + 1m Scalp-Pro trend)"** to a **1-minute**, **5-minute** or **tick / range** chart (it
    overlays on the price pane). It is listed under **Custom Indicators**.
 
 ## Big Trades + Tape Speed
