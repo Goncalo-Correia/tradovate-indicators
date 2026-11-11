@@ -265,6 +265,9 @@ module.exports = {
     },
     plotter: [
         predef.plotters.columns("volume"),
+        // lines first so the dots paint on top of them; each connects its dots
+        predef.plotters.singleline("buyVolume"),
+        predef.plotters.singleline("sellVolume"),
         predef.plotters.dots("buyVolume"),
         predef.plotters.dots("sellVolume")
     ],

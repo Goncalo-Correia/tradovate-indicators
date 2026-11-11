@@ -30,7 +30,7 @@ for 1-minute scalping.
 | Original ThinkorSwim feature | Tradovate port |
 |---|---|
 | Tall blue volume histogram (total candle volume) | Blue `columns` plot of `volume` |
-| Green buyer line/dot + red seller line/dot, positioned by where in the range trading occurred | Green/red `dots` plots at estimated `buyVolume` / `sellVolume` inside each volume bar |
+| Green buyer line/dot + red seller line/dot, positioned by where in the range trading occurred | Green/red `dots` plots at estimated `buyVolume` / `sellVolume` inside each volume bar, each joined by a `singleline` plotter on the same field (a green line through the buy dots, a red line through the sell dots) |
 | 10-box green/red directional strength meter | Fixed HUD (top-left of pane): 10 boxes split green(buy)/red(sell) by the current candle's buy % |
 | Buy/Sell % label — green / red / yellow (balanced) | `BUY x%  SELL y%` label, colored by dominance (yellow inside the balance band) |
 | 14-EMA vs VWAP trend label, hidden when price stalls | `TREND ▲ EMA > VWAP` / `▼ EMA < VWAP`, shown only during an active move (correct side **and** EMA slope agrees); hidden otherwise |

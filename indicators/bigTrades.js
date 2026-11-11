@@ -26,14 +26,14 @@
 //        traded at that price inside that bar", which on busy markets (NQ/ES
 //        at 1-min) is most levels — raise the thresholds or use a 1-tick chart.
 //    If a bar has no profile, the whole bar's d.offerVolume()/d.bidVolume() is
-//    used at its close. If the feed gives neither, no bubbles are drawn and the
-//    HUD says so.
+//    used at its close. If the feed gives neither, no bubbles are drawn.
 //
 // 2) TAPE SPEED
 //    speed = contracts per second for a bar (volume / bar duration, from the
 //    gap between bar timestamps; the forming bar uses wall-clock time elapsed
-//    since it opened). A bar is flagged "FAST" when its speed is at least
-//    speedMult x the average speed of the previous speedBars closed bars.
+//    since it opened). A bar is flagged fast — an "F" above it — when its
+//    speed is at least speedMult x the average speed of the previous speedBars
+//    closed bars. The HUD is one line: the forming bar's speed vs that average.
 //    On a time chart every bar lasts the same, so this reduces to "volume vs
 //    the 10-bar average"; on tick/range charts it is a true rate.
 //    Session/weekend gaps are capped (GAP_CAP x the median bar duration) so one
@@ -50,7 +50,7 @@ const meta = require("./tools/meta");
 const { du, px, op } = require("./tools/graphics");
 
 // ============================== CONFIG ======================================
-const BUY_COLOR = "#22c55e";   // HUD / "text" style
+const BUY_COLOR = "#22c55e";   // "text" style
 const SELL_COLOR = "#ef4444";
 const FAST_COLOR = "#facc15";
 const NEUTRAL_COLOR = "#9ca3af";
@@ -85,8 +85,8 @@ for (const tier of ["big", "med"]) {
     }
 }
 
-const LOOKBACK_BARS = 2000;    // only bars this recent get bubbles / FAST labels
-const FAST_GAP = 14;           // px between the bar high and the FAST label
+const LOOKBACK_BARS = 2000;    // only bars this recent get rings / "F" labels
+const FAST_GAP = 14;           // px between the bar high and the "F" label
 const FAST_FONT = 10;
 
 const GAP_CAP = 3;             // durations capped at GAP_CAP x median duration
@@ -96,7 +96,6 @@ const USE_WALL_CLOCK = true;   // forming bar's duration from Date.now()
 const HUD_CORNER = { cs: "frame", h: "right", v: "top" };
 const HUD_X = -10;             // px from the right edge (text drawn to the left)
 const HUD_TOP = 14;
-const HUD_LINE_H = 16;
 const HUD_FONT = 12;
 // ============================================================================
 
@@ -113,10 +112,7 @@ class BigTrades {
 
         // ---- big trades on this bar (recomputed on every tick re-run) -------
         const bubbles = [];
-        let src = "none";      // where the bid/ask split came from (HUD diagnostic)
-        let maxBuy = 0, maxSell = 0;
         const add = (price, vol, buy) => {
-            if (buy) maxBuy = Math.max(maxBuy, vol); else maxSell = Math.max(maxSell, vol);
             if (vol >= med) bubbles.push({ price, vol, buy, tier: vol >= big ? "big" : "med" });
         };
         const profile = d.profile();
@@ -124,20 +120,15 @@ class BigTrades {
         const split = profile && profile.length &&
             profile.some((lv) => lv.askVol !== undefined || lv.bidVol !== undefined);
         if (split) {
-            src = "profile";
             for (let k = 0; k < profile.length; ++k) {
                 const lv = profile[k];
                 add(lv.price, lv.askVol || 0, true);
                 add(lv.price, lv.bidVol || 0, false);
             }
         } else {
-            const ask = d.offerVolume ? d.offerVolume() : undefined;
-            const bid = d.bidVolume ? d.bidVolume() : undefined;
-            if (ask !== undefined || bid !== undefined) {
-                src = "bar";
-                add(d.close(), ask || 0, true);
-                add(d.close(), bid || 0, false);
-            }
+            // No per-price split: whole-bar bid/ask volume at the close.
+            add(d.close(), (d.offerVolume && d.offerVolume()) || 0, true);
+            add(d.close(), (d.bidVolume && d.bidVolume()) || 0, false);
         }
 
         // ---- dots: this bar's largest trades per tier and side --------------
@@ -161,8 +152,6 @@ class BigTrades {
             high: d.high(),
             x: d.index(),
             bubbles,
-            maxBuy,
-            maxSell,
             ratio: undefined
         };
 
@@ -174,11 +163,10 @@ class BigTrades {
 
         const items = [];
         if (d.isLast()) {
-            this.src = src;
             const live = this.ratioAt(index, index);
             this.bars[index].ratio = live;
             items.push(...this.drawHistory(index));
-            if (p.showHud) items.push(...this.hud(live));
+            if (p.showHud) items.push(this.hud(live));
         }
 
         // Assign graphics on every bar (false = nothing) so no stale copies linger.
@@ -229,14 +217,9 @@ class BigTrades {
         const trades = [];
         const labels = [];
         const first = Math.max(0, last - LOOKBACK_BARS);
-        this.maxBuy = 0;
-        this.maxSell = 0;
-        this.scanned = last - first + 1;
         for (let j = first; j <= last; ++j) {
             const b = this.bars[j];
             if (!b) continue;
-            this.maxBuy = Math.max(this.maxBuy, b.maxBuy);
-            this.maxSell = Math.max(this.maxSell, b.maxSell);
             for (const t of b.bubbles) {
                 if (t.buy ? !p.showBuys : !p.showSells) continue;
                 trades.push({ x: b.x, t });
@@ -247,7 +230,7 @@ class BigTrades {
                     key: `fast${j}`,
                     // In grid space, subtracting px moves UP.
                     point: { x: du(b.x), y: op(du(b.high), "-", px(FAST_GAP)) },
-                    text: "FAST",
+                    text: "F",
                     style: { fontSize: FAST_FONT, fontWeight: "bold", fill: FAST_COLOR },
                     textAlignment: "centerAbove",
                     global: true
@@ -255,9 +238,6 @@ class BigTrades {
             }
         }
 
-        // HUD counts: every qualifying trade in the scanned bars.
-        this.counts = { med: { buy: 0, sell: 0 }, big: { buy: 0, sell: 0 } };
-        for (const s of trades) this.counts[s.t.tier][s.t.buy ? "buy" : "sell"]++;
         if (MARKER_STYLE !== "text") return this.bigMarks(trades).concat(labels);
 
         return trades.slice(-MAX_MARKERS).map(({ x, t }, n) => ({
@@ -296,38 +276,23 @@ class BigTrades {
         }));
     }
 
+    // The HUD is a single line: the forming bar's tape speed vs the average.
     hud(live) {
         const p = this.props;
-        const rows = [];
-        if (live === undefined) {
-            rows.push([`TAPE  warming up (${p.speedBars} bars)`, NEUTRAL_COLOR]);
-        } else {
-            const fast = live >= p.speedMult;
-            rows.push([`TAPE  ${live.toFixed(1)}x avg${fast ? "  FAST" : ""}`, fast ? FAST_COLOR : NEUTRAL_COLOR]);
-        }
-        // How many trades of each tier were found in the scanned bars — tells
-        // "nothing to draw" apart from "drawn but not rendering".
-        const c = this.counts;
-        rows.push([`MED  buy ${c.med.buy} / sell ${c.med.sell}`, NEUTRAL_COLOR]);
-        rows.push([`BIG  buy ${c.big.buy} / sell ${c.big.sell}`, NEUTRAL_COLOR]);
-        // Diagnostics: where the bid/ask split comes from on the newest bar
-        // ("profile" = per-price, "bar" = whole-bar offer/bid volume, "none"),
-        // and the biggest buy / sell seen in the scanned bars. If MAX stays
-        // under mediumSize there is simply no trade that big on screen.
-        rows.push([`SRC  ${this.src}`, this.src === "none" ? SELL_COLOR : NEUTRAL_COLOR]);
-        rows.push([`MAX  buy ${Math.round(this.maxBuy)} / sell ${Math.round(this.maxSell)} in ${this.scanned} bars`, NEUTRAL_COLOR]);
-
-        return rows.map(([text, color], n) => ({
+        const fast = live !== undefined && live >= p.speedMult;
+        return {
             tag: "Text",
-            key: `bthud${n}`,
-            point: { x: px(HUD_X), y: px(HUD_TOP + n * HUD_LINE_H) },
-            text,
-            style: { fontSize: HUD_FONT, fontWeight: "bold", fill: color },
+            key: "bthud",
+            point: { x: px(HUD_X), y: px(HUD_TOP) },
+            text: live === undefined
+                ? `TAPE  warming up (${p.speedBars} bars)`
+                : `TAPE  ${live.toFixed(1)}x avg${fast ? "  F" : ""}`,
+            style: { fontSize: HUD_FONT, fontWeight: "bold", fill: fast ? FAST_COLOR : NEUTRAL_COLOR },
             // anchored at the right edge: "leftMiddle" = text to the LEFT of point
             textAlignment: "leftMiddle",
             global: true,
             origin: HUD_CORNER
-        }));
+        };
     }
 }
 
